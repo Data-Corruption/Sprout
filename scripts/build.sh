@@ -11,7 +11,7 @@
 #     Skip tests and build only the current host architecture.
 #
 # CI:
-#   CI=true CI_ENABLED=true ./scripts/build.sh
+#   CI=true ./scripts/build.sh
 #     Always refresh release scripts and the version marker. Only build, tag,
 #     and upload binaries when the latest CHANGELOG version is not already tagged.
 #
@@ -236,13 +236,6 @@ resolve_release_policy() {
   fi
 }
 
-maybe_skip_ci_build() {
-  if [[ "${CI:-}" == "true" && -z "${CI_ENABLED:-}" ]]; then
-    printf "🟢 Skipping CI build because CI_ENABLED is not set\n"
-    exit 0
-  fi
-}
-
 frontend_build() {
   # Download tools if missing (or requested in CI)
   [[ "$MODE" == "ci" && "${REFETCH_TOOLS:-false}" == "true" ]] && rm -f esbuild tailwindcss "$CSS_DIR/daisyui.mjs" "$CSS_DIR/daisyui-theme.mjs"
@@ -433,7 +426,6 @@ mirror() {
 # Main ------------------------------------------------------------------------
 
 main() {
-  maybe_skip_ci_build
   clean_out_dir
   parse_args "$@"
   detect_mode
