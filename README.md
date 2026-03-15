@@ -1,8 +1,5 @@
 # 🌱 Sprout
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE.md)
-[![Go Report Card](https://goreportcard.com/badge/github.com/DataCorruption/Sprout)](https://goreportcard.com/report/github.com/DataCorruption/Sprout)
-
 **Go CLI/Daemon framework with atomic state and self-updating superpowers.**
 
 Sprout handles the *entire lifecycle* of a CLI application: compiling → packaging → publishing → installing → running (as a daemon) → and safely updating itself. Infrastructure that would take months to build from scratch, battle-tested and ready to use.
@@ -82,11 +79,8 @@ You're building a CLI tool or system service and you want:
 
 You're comfortable with Go, Linux, and reading source code when needed.
 
-## License
 
-Apache 2.0 - See [LICENSE.md](LICENSE.md) for details.
-
-<br>
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE.md)
 
 <sub>
 🩵 xoxo :3 <- that last bit is a cat, his name is sebastian and he is ultra fancy. Like, i'm not kidding, more than you initially imagined while reading that. Pinky up, drinks tea... you have no idea. Crazy.

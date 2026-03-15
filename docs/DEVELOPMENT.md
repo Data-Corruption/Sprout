@@ -19,7 +19,7 @@ Click the "Use this template" button on GitHub to create a new repository based 
 
 ### 2. Enable GitHub Actions
 
-// TODO
+**Repo Settings → Actions → General → Workflow permissions:** Read and write permissions
 
 ### 3. Setup Cloudflare R2
 
