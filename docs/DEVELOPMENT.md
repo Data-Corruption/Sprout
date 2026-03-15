@@ -21,6 +21,8 @@ Click the "Use this template" button on GitHub to create a new repository based 
 
 **Repo Settings → Actions → General → Workflow permissions:** Read and write permissions
 
+**Repo Settings → Secrets and variables → Actions:** Create the variable `CI_ENABLED` = `true`
+
 ### 3. Setup Cloudflare R2
 
 This assumes you have a domain and Cloudflare account. If you don't, get one. 

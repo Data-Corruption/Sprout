@@ -36,6 +36,7 @@ jobs:
       - name: Build (and release if applicable)
         shell: bash
         env:
+          CI_ENABLED: ${{ vars.CI_ENABLED }}
           VERBOSE: ${{ vars.VERBOSE }}
           TAILWIND_VERSION: ${{ vars.TAILWIND_VERSION }}
           DAISYUI_VERSION: ${{ vars.DAISYUI_VERSION }}
