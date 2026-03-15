@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .Title }}</title>
+    <meta name="description" content="Application settings page.">
+    <link rel="icon" href="{{ .Favicon }}">
+    <link rel="stylesheet" href="{{ .CSS }}">
+    <script src="{{ .JS }}"></script>
+</head>
+
+<body class="min-h-screen bg-base-100">
+    <!-- Click Blocker - prevents interactions during async operations -->
+    <div id="click-blocker" class="hidden fixed inset-0 z-50 bg-base-300/50 backdrop-blur-sm cursor-wait"></div>
+
+    <!-- Error Modal -->
+    <dialog id="error-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg text-error">Error</h3>
+            <p id="error-modal-message" class="py-4 text-base-content/70">An error occurred.</p>
+            <div class="modal-action">
+                <form method="dialog">
+                    <button class="btn">Close</button>
+                </form>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
+    <!-- Stop Modal -->
+    <dialog id="stop-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg">Stop Server</h3>
+            <p class="py-4 text-base-content/70">Are you sure you want to stop the server? This will stop the service
+                and you will lose access to this page.</p>
+            <div class="modal-action">
+                <form method="dialog">
+                    <button class="btn btn-ghost">Cancel</button>
+                </form>
+                <button class="btn btn-error" onclick="stopServer()">Stop Server</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
+    <!-- Restart Modal -->
+    <dialog id="restart-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg">Restart Server</h3>
+            <p class="py-4 text-base-content/70">Configure what should happen during the restart.</p>
+
+            <label class="label cursor-pointer justify-start gap-4">
+                <input type="checkbox" id="restart-update" class="checkbox checkbox-primary" />
+                <div>
+                    <span class="font-medium">Check for Updates</span>
+                    <p class="text-sm text-base-content/50">Download and apply updates before restarting</p>
+                </div>
+            </label>
+
+            <div class="modal-action">
+                <form method="dialog">
+                    <button class="btn btn-ghost">Cancel</button>
+                </form>
+                <button class="btn btn-primary" onclick="restartServer()">Restart</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
+    <!-- Main Content Container -->
+    <div class="min-h-screen flex items-start justify-center p-4 sm:p-8">
+        <div class="w-full max-w-md space-y-4">
+
+            <!-- Header -->
+            <div class="text-center">
+                <span class="text-2xl">🌱</span>
+            </div>
+
+            <!-- Update notification -->
+            {{ if .UpdateAvailable }}
+            <div role="alert" class="alert alert-info">
+                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>A new version is available</span>
+            </div>
+            {{ end }}
+
+            <!-- Restart Required Notice (hidden by default) -->
+            <div id="restart-required-notice" role="alert" class="alert alert-warning hidden">
+                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <span>Changes require a restart to take effect</span>
+            </div>
+
+            <!-- Server Controls Card -->
+            <div class="card bg-base-200 shadow-sm">
+                <div class="card-body gap-4">
+                    <h2 class="card-title text-base">Server Controls</h2>
+                    <div class="flex gap-3">
+                        <button class="btn btn-error btn-outline flex-1"
+                            onclick="document.getElementById('stop-modal').showModal()">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                                stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                            </svg>
+                            Stop
+                        </button>
+                        <button class="btn btn-primary flex-1"
+                            onclick="document.getElementById('restart-modal').showModal()">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                                stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Restart
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Appearance Card -->
+            <div class="card bg-base-200 shadow-sm">
+                <div class="card-body gap-4">
+                    <h2 class="card-title text-base">Appearance</h2>
+                    <label class="label cursor-pointer justify-between px-0">
+                        <span>Dark Mode</span>
+                        <input type="checkbox" id="theme-toggle" class="toggle toggle-primary"
+                            onchange="toggleTheme()" />
+                    </label>
+                </div>
+            </div>
+
+            <!-- Server Settings Card -->
+            <div class="card bg-base-200 shadow-sm">
+                <div class="card-body gap-4">
+                    <h2 class="card-title text-base">Server Settings</h2>
+
+                    <!-- Log Level -->
+                    <fieldset class="fieldset">
+                        <legend class="fieldset-legend">Log Level</legend>
+                        <div class="flex gap-2 items-center">
+                            <select id="settings-log-level" class="select select-bordered w-full"
+                                aria-label="Log Level">
+                                <option value="debug" {{ if eq .LogLevel "debug" }}selected{{ end }}>Debug</option>
+                                <option value="info" {{ if eq .LogLevel "info" }}selected{{ end }}>Info</option>
+                                <option value="warn" {{ if eq .LogLevel "warn" }}selected{{ end }}>Warn</option>
+                                <option value="error" {{ if eq .LogLevel "error" }}selected{{ end }}>Error</option>
+                            </select>
+                            <span class="status hidden" role="status" aria-live="polite"></span>
+                        </div>
+                        <p class="label text-xs">Controls verbosity of server logs</p>
+                    </fieldset>
+
+                    <!-- Host -->
+                    <fieldset class="fieldset">
+                        <legend class="fieldset-legend">Host</legend>
+                        <div class="flex gap-2 items-center">
+                            <input type="text" id="settings-host" class="input input-bordered w-full"
+                                value="{{ .Host }}" placeholder="localhost" />
+                            <span class="status hidden" role="status" aria-live="polite"></span>
+                        </div>
+                    </fieldset>
+
+                    <!-- Port -->
+                    <fieldset class="fieldset">
+                        <legend class="fieldset-legend">Port</legend>
+                        <div class="flex gap-2 items-center">
+                            <input type="number" id="settings-port" class="input input-bordered w-full"
+                                value="{{ .Port }}" placeholder="8080" min="1" max="65535" />
+                            <span class="status hidden" role="status" aria-live="polite"></span>
+                        </div>
+                    </fieldset>
+
+                    <!-- Proxy Port -->
+                    <fieldset class="fieldset">
+                        <legend class="fieldset-legend">Proxy Port</legend>
+                        <div class="flex gap-2 items-center">
+                            <input type="number" id="settings-proxy-port" class="input input-bordered w-full"
+                                value="{{ .ProxyPort }}" placeholder="0" min="0" max="65535" />
+                            <span class="status hidden" role="status" aria-live="polite"></span>
+                        </div>
+                        <p class="label text-xs">Set to 0 to disable reverse proxy mode</p>
+                    </fieldset>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="text-center">
+                <span class="text-xs text-base-content/40">{{ .Version }}</span>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Invisigal - hover trigger, lg+ only -->
+    <figure class="hidden lg:block fixed bottom-4 right-4 max-w-xs opacity-1 hover:opacity-100 transition-opacity duration-300 cursor-pointer">
+        <img src="{{ assetPath "invisigal.jpg" }}" alt="invisigal" class="rounded-lg shadow-lg" />
+        <figcaption class="text-xs text-purple-400 text-center mt-2 italic">
+            hey nerd, nice user interface. kinda empty though...
+        </figcaption>
+    </figure>
+</body>
+
+</html>
