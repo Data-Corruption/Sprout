@@ -1,6 +1,6 @@
 # 🌱 Sprout
 
-**Go CLI/Daemon framework with atomic state and self-updating superpowers.**
+**Go CLI/Daemon app template with atomic state, built-in updates, and release plumbing.**
 
 Sprout handles the *entire lifecycle* of a CLI application: compiling → packaging → publishing → installing → running (as a daemon) → and safely updating itself. Infrastructure that would take months to build from scratch, battle-tested and ready to use.
 
