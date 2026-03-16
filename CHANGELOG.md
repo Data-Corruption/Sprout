@@ -10,7 +10,7 @@ Example update.
 
 // ## [v1.0.0] - 2025-11-24
 
-Minimal starter for Go CLI apps with an optional webserver daemon, changelog‑driven Forgejo Actions CI/CD, and self‑updating installs.
+Minimal starter for Go CLI apps with an optional webserver daemon, changelog‑driven Github Actions CI/CD, and self‑updating installs.
 
 Added
 - CLI scaffold using urfave/cli v3 with common flags and subcommands.
