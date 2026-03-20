@@ -46,7 +46,7 @@ JS_DIR="./internal/ui/assets/js"
 CSS_DIR="./internal/ui/assets/css"
 GO_MAIN_PATH="./cmd"
 
-NO_CACHE='Cache-Control: no-store, max-age=0, must-revalidate' # unneeded with cache rule but just in case
+NO_CACHE='Cache-Control: no-store, max-age=0, must-revalidate' # probs unneeded with cache rule but just in case
 
 MODE="local"
 MIRROR_DIR=""

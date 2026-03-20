@@ -13,7 +13,8 @@
 
 <body class="min-h-screen bg-base-100">
     <!-- Click Blocker - prevents interactions during async operations -->
-    <div id="click-blocker" class="hidden fixed inset-0 z-50 bg-base-300/50 backdrop-blur-sm cursor-wait"></div>
+    <dialog id="click-blocker"
+        class="m-0 h-screen w-screen max-h-screen max-w-[100vw] cursor-wait border-none bg-transparent p-0 outline-none"></dialog>
 
     <!-- Error Modal -->
     <dialog id="error-modal" class="modal">

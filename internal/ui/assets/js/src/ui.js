@@ -4,13 +4,15 @@
 /** Show click blocker overlay */
 export function blockClicks() {
     const blocker = document.getElementById('click-blocker');
-    if (blocker) blocker.classList.remove('hidden');
+    if (!blocker || blocker.open) return;
+    blocker.showModal();
 }
 
 /** Hide click blocker overlay */
 export function unblockClicks() {
     const blocker = document.getElementById('click-blocker');
-    if (blocker) blocker.classList.add('hidden');
+    if (!blocker?.open) return;
+    blocker.close();
 }
 
 /** Show a loading spinner on the status element */

@@ -100,8 +100,7 @@ func (a *App) Init(ctx context.Context, cmd *cli.Command) (context.Context, erro
 	}
 
 	// logger
-	logOverride := cmd.String("log") != ""
-	a.Log, err = xlog.New(filepath.Join(a.StorageDir, "logs"), x.Ternary(logOverride, cmd.String("log"), "none"))
+	a.Log, err = xlog.New(filepath.Join(a.StorageDir, "logs"), "debug")
 	if err != nil {
 		return ctx, fmt.Errorf("failed to initialize logger: %w", err)
 	}
@@ -152,10 +151,8 @@ func (a *App) Init(ctx context.Context, cmd *cli.Command) (context.Context, erro
 	a.UserAgent = fmt.Sprintf("Mozilla/5.0 (compatible; %s/%s; +%s)", a.buildInfo.Name, mmVer, a.buildInfo.ContactURL)
 
 	// set log level
-	if !logOverride {
-		if err := a.Log.SetLevel(cfg.LogLevel); err != nil {
-			return ctx, fmt.Errorf("failed to set log level: %w", err)
-		}
+	if err := a.Log.SetLevel(x.Ternary(cmd.IsSet("log"), cmd.String("log"), cfg.LogLevel)); err != nil {
+		return ctx, fmt.Errorf("failed to set log level: %w", err)
 	}
 	// put logger into context
 	ctx = xlog.IntoContext(ctx, a.Log)
