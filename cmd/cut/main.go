@@ -26,10 +26,10 @@ func run(args []string) int {
 		fmt.Fprintf(os.Stderr, `Usage: cut [flags] [feature...]
 
 Plan the final consumer tree: remove optional Sprout features, remove
-template-only tooling, strip surviving ownership markers, and optionally rename
-the Go module. Arguments are a union of features to cut; cutting a parent
-removes every dotted descendant. With no feature arguments, every application
-feature is retained.
+template-only tooling, prune directories those removals leave empty, strip
+surviving ownership markers, and optionally rename the Go module. Arguments are
+a union of features to cut; cutting a parent removes every dotted descendant.
+With no feature arguments, every application feature is retained.
 
 The default is a read-only preview. Pass --finalize to apply the same plan.
 

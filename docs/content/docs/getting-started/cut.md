@@ -52,13 +52,14 @@ finish the template:
 ```
 
 The cutter validates before it touches anything, deletes whole feature-owned
-files and fenced blocks, preserves file modes and line endings, formats changed
-Go, and writes through temporary files. Retained files are rewritten before the
-cutter removes itself, then `goimports` prunes the imports those removals left
-unused and the cutter re-walks the tree to confirm no marker survived and every
-planned deletion happened. Every deletion is closed: nothing uncomments a
-fallback implementation, adds a missing import, or applies a hidden dependency
-rule.
+files and fenced blocks, prunes directories those deletions leave empty,
+preserves file modes and line endings, formats changed Go, and writes through
+temporary files. It does not remove unrelated empty directories that existed
+before the cut. Retained files are rewritten before the cutter removes itself,
+then `goimports` prunes the imports those removals left unused and the cutter
+re-walks the tree to confirm no marker survived and every planned deletion
+happened. Every deletion is closed: nothing uncomments a fallback
+implementation, adds a missing import, or applies a hidden dependency rule.
 
 And that's it, once the markers are gone there is no supported way to
 make another cut.

@@ -16,8 +16,9 @@ func TestVerify(t *testing.T) {
 		root := t.TempDir()
 		writeTestFile(t, filepath.Join(root, "main.go"), []byte("package sample\n"), 0o644)
 		result := Result{
-			RemovedFiles:       []string{"removed.go"},
-			RemovedDirectories: []string{"cmd/cut"},
+			RemovedFiles:               []string{"removed.go"},
+			RemovedTemplateDirectories: []string{"cmd/cut"},
+			RemovedEmptyDirectories:    []string{"internal/old"},
 		}
 		if err := Verify(root, result); err != nil {
 			t.Fatalf("Verify rejected clean tree: %v", err)
@@ -43,7 +44,7 @@ func TestVerify(t *testing.T) {
 		if err := os.MkdirAll(path, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := Verify(root, Result{RemovedDirectories: []string{"cmd/cut"}}); err == nil ||
+		if err := Verify(root, Result{RemovedTemplateDirectories: []string{"cmd/cut"}}); err == nil ||
 			!strings.Contains(err.Error(), "retained cmd/cut") {
 			t.Fatalf("Verify error = %v, want retained path error", err)
 		}

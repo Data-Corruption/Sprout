@@ -32,12 +32,13 @@ type Options struct {
 
 // Result describes the files and blocks selected by a cut.
 type Result struct {
-	RemovedFiles       []string
-	RemovedDirectories []string
-	ChangedFiles       []string
-	RemovedBlocks      int
-	StrippedMarkers    int
-	RenamedModuleRefs  int
+	RemovedFiles               []string
+	RemovedTemplateDirectories []string
+	RemovedEmptyDirectories    []string
+	ChangedFiles               []string
+	RemovedBlocks              int
+	StrippedMarkers            int
+	RenamedModuleRefs          int
 }
 
 type filePlan struct {
@@ -183,14 +184,18 @@ func Run(options Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	directories, err := planTemplateDirectories(plans)
+	templateDirectories, err := planTemplateDirectories(plans)
+	if err != nil {
+		return Result{}, err
+	}
+	emptyDirectories, err := planEmptyDirectories(root, plans, templateDirectories)
 	if err != nil {
 		return Result{}, err
 	}
 
-	result := resultFor(plans, directories)
+	result := resultFor(plans, templateDirectories, emptyDirectories)
 	if !options.Apply {
-		if err := reportPlans(output, plans, directories, true); err != nil {
+		if err := reportPlans(output, plans, templateDirectories, emptyDirectories, true); err != nil {
 			return Result{}, err
 		}
 		if _, err := fmt.Fprintln(
@@ -212,7 +217,7 @@ func Run(options Options) (Result, error) {
 			return Result{}, err
 		}
 	}
-	if err := applyPlans(plans, directories); err != nil {
+	if err := applyPlans(plans, templateDirectories, emptyDirectories); err != nil {
 		return Result{}, err
 	}
 	if len(targets) != 0 {
@@ -227,7 +232,7 @@ func Run(options Options) (Result, error) {
 	if err := Verify(root, result); err != nil {
 		return Result{}, err
 	}
-	if err := reportPlans(output, plans, directories, false); err != nil {
+	if err := reportPlans(output, plans, templateDirectories, emptyDirectories, false); err != nil {
 		return Result{}, err
 	}
 	if _, err := fmt.Fprintln(output, "Verify with: ./scripts/test.sh"); err != nil {
@@ -307,6 +312,11 @@ func planTemplateDirectories(plans []filePlan) ([]directoryPlan, error) {
 
 	var directories []directoryPlan
 	for directory, files := range plannedFiles {
+		// A root-level template file may be removed, but the repository root is
+		// never itself a removable template directory.
+		if relativeDirectories[directory] == "." {
+			continue
+		}
 		entries, err := os.ReadDir(directory)
 		if err != nil {
 			return nil, fmt.Errorf("read template directory %s: %w", relativeDirectories[directory], err)
@@ -337,7 +347,94 @@ func planTemplateDirectories(plans []filePlan) ([]directoryPlan, error) {
 	return directories, nil
 }
 
-func applyPlans(plans []filePlan, directories []directoryPlan) error {
+// planEmptyDirectories finds only directories that the cut itself makes
+// empty. Pre-existing empty directories are not part of the cut plan and are
+// left alone.
+func planEmptyDirectories(
+	root string,
+	plans []filePlan,
+	templateDirectories []directoryPlan,
+) ([]directoryPlan, error) {
+	removedFiles := make(map[string]struct{})
+	candidates := make(map[string]string)
+	addAncestors := func(path string) {
+		for directory := filepath.Dir(path); directory != root; directory = filepath.Dir(directory) {
+			relative, err := filepath.Rel(root, directory)
+			if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+				return
+			}
+			candidates[directory] = filepath.ToSlash(relative)
+		}
+	}
+	for _, plan := range plans {
+		if !plan.delete {
+			continue
+		}
+		removedFiles[plan.path] = struct{}{}
+		addAncestors(plan.path)
+	}
+
+	removedTemplateDirectories := make(map[string]struct{}, len(templateDirectories))
+	for _, directory := range templateDirectories {
+		removedTemplateDirectories[directory.path] = struct{}{}
+		addAncestors(directory.path)
+	}
+
+	ordered := make([]directoryPlan, 0, len(candidates))
+	for path, relative := range candidates {
+		insideTemplateDirectory := false
+		for directory := range removedTemplateDirectories {
+			if path == directory || strings.HasPrefix(path, directory+string(os.PathSeparator)) {
+				insideTemplateDirectory = true
+				break
+			}
+		}
+		if !insideTemplateDirectory {
+			ordered = append(ordered, directoryPlan{path: path, relative: relative})
+		}
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if len(ordered[i].relative) == len(ordered[j].relative) {
+			return ordered[i].relative < ordered[j].relative
+		}
+		return len(ordered[i].relative) > len(ordered[j].relative)
+	})
+
+	plannedEmpty := make(map[string]struct{})
+	emptyDirectories := make([]directoryPlan, 0, len(ordered))
+	for _, directory := range ordered {
+		entries, err := os.ReadDir(directory.path)
+		if err != nil {
+			return nil, fmt.Errorf("read possible empty directory %s: %w", directory.relative, err)
+		}
+		empty := true
+		for _, entry := range entries {
+			path := filepath.Join(directory.path, entry.Name())
+			if _, removed := removedFiles[path]; removed {
+				continue
+			}
+			if _, removed := removedTemplateDirectories[path]; removed {
+				continue
+			}
+			if _, removed := plannedEmpty[path]; removed {
+				continue
+			}
+			empty = false
+			break
+		}
+		if empty {
+			plannedEmpty[directory.path] = struct{}{}
+			emptyDirectories = append(emptyDirectories, directory)
+		}
+	}
+	return emptyDirectories, nil
+}
+
+func applyPlans(
+	plans []filePlan,
+	templateDirectories []directoryPlan,
+	emptyDirectories []directoryPlan,
+) error {
 	for _, removeTemplate := range []bool{false, true} {
 		for _, plan := range plans {
 			isTemplateFile := plan.delete && plan.fileFeature == templateOwner
@@ -355,7 +452,7 @@ func applyPlans(plans []filePlan, directories []directoryPlan) error {
 			}
 		}
 	}
-	for _, directory := range directories {
+	for _, directory := range templateDirectories {
 		entries, err := os.ReadDir(directory.path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -377,6 +474,14 @@ func applyPlans(plans []filePlan, directories []directoryPlan) error {
 		// the package root, those fixtures are template-owned too.
 		if err := os.RemoveAll(directory.path); err != nil {
 			return fmt.Errorf("remove finalized directory %s: %w", directory.relative, err)
+		}
+	}
+	for _, directory := range emptyDirectories {
+		if err := os.Remove(directory.path); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("remove directory emptied by cut %s: %w", directory.relative, err)
 		}
 	}
 	return nil
@@ -639,9 +744,14 @@ func replaceFile(path string, data []byte, mode fs.FileMode) (err error) {
 	return os.Rename(temporaryName, path)
 }
 
-func resultFor(plans []filePlan, directories []directoryPlan) Result {
+func resultFor(
+	plans []filePlan,
+	templateDirectories []directoryPlan,
+	emptyDirectories []directoryPlan,
+) Result {
 	result := Result{
-		RemovedDirectories: make([]string, 0, len(directories)),
+		RemovedTemplateDirectories: make([]string, 0, len(templateDirectories)),
+		RemovedEmptyDirectories:    make([]string, 0, len(emptyDirectories)),
 	}
 	for _, plan := range plans {
 		result.RemovedBlocks += plan.blocks
@@ -653,8 +763,11 @@ func resultFor(plans []filePlan, directories []directoryPlan) Result {
 			result.ChangedFiles = append(result.ChangedFiles, plan.relative)
 		}
 	}
-	for _, directory := range directories {
-		result.RemovedDirectories = append(result.RemovedDirectories, directory.relative)
+	for _, directory := range templateDirectories {
+		result.RemovedTemplateDirectories = append(result.RemovedTemplateDirectories, directory.relative)
+	}
+	for _, directory := range emptyDirectories {
+		result.RemovedEmptyDirectories = append(result.RemovedEmptyDirectories, directory.relative)
 	}
 	return result
 }
@@ -662,10 +775,11 @@ func resultFor(plans []filePlan, directories []directoryPlan) Result {
 func reportPlans(
 	output io.Writer,
 	plans []filePlan,
-	directories []directoryPlan,
+	templateDirectories []directoryPlan,
+	emptyDirectories []directoryPlan,
 	dryRun bool,
 ) error {
-	if len(plans) == 0 && len(directories) == 0 {
+	if len(plans) == 0 && len(templateDirectories) == 0 && len(emptyDirectories) == 0 {
 		_, err := fmt.Fprintln(output, "No changes planned.")
 		return err
 	}
@@ -699,7 +813,7 @@ func reportPlans(
 			return err
 		}
 	}
-	for _, directory := range directories {
+	for _, directory := range templateDirectories {
 		action := "removed"
 		if dryRun {
 			action = "would remove"
@@ -713,7 +827,24 @@ func reportPlans(
 			return err
 		}
 	}
-	result := resultFor(plans, directories)
+	for _, directory := range emptyDirectories {
+		action := "removed"
+		if dryRun {
+			action = "would remove"
+		}
+		if _, err := fmt.Fprintf(
+			output,
+			"%s %s/ (empty after planned removals)\n",
+			action,
+			directory.relative,
+		); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(output); err != nil {
+		return err
+	}
+	result := resultFor(plans, templateDirectories, emptyDirectories)
 	verb := "Removed"
 	if dryRun {
 		verb = "Would remove"
@@ -724,10 +855,11 @@ func reportPlans(
 	}
 	_, err := fmt.Fprintf(
 		output,
-		"%s %d whole file(s), %d template directory(s), and %d block(s); %s %d marker(s); renamed %d module reference(s); %d file(s) rewritten.\n",
+		"%s %d whole file(s), %d template directory(s), %d empty directory(s), and %d block(s); %s %d marker(s); renamed %d module reference(s); %d file(s) rewritten.\n",
 		verb,
 		len(result.RemovedFiles),
-		len(result.RemovedDirectories),
+		len(result.RemovedTemplateDirectories),
+		len(result.RemovedEmptyDirectories),
 		result.RemovedBlocks,
 		markerVerb,
 		result.StrippedMarkers,

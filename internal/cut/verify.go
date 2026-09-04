@@ -25,7 +25,10 @@ func Verify(root string, result Result) error {
 		return err
 	}
 
-	for _, relative := range append(append([]string(nil), result.RemovedFiles...), result.RemovedDirectories...) {
+	removedPaths := append([]string(nil), result.RemovedFiles...)
+	removedPaths = append(removedPaths, result.RemovedTemplateDirectories...)
+	removedPaths = append(removedPaths, result.RemovedEmptyDirectories...)
+	for _, relative := range removedPaths {
 		_, err := os.Lstat(filepath.Join(absolute, filepath.FromSlash(relative)))
 		switch {
 		case err == nil:

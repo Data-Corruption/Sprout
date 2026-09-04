@@ -126,7 +126,8 @@ func TestRunFinalizesTemplateOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(preview.RemovedFiles, []string{"cmd/cut/tool.go"}) ||
-		!reflect.DeepEqual(preview.RemovedDirectories, []string{"cmd/cut"}) ||
+		!reflect.DeepEqual(preview.RemovedTemplateDirectories, []string{"cmd/cut"}) ||
+		!reflect.DeepEqual(preview.RemovedEmptyDirectories, []string{"cmd"}) ||
 		preview.RemovedBlocks != 1 || preview.StrippedMarkers != 2 {
 		t.Fatalf("unexpected preview: %#v", preview)
 	}
@@ -150,11 +151,82 @@ func TestRunFinalizesTemplateOwnership(t *testing.T) {
 	if _, err := os.Stat(toolDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("empty template directory still exists: %v", err)
 	}
+	if _, err := os.Stat(filepath.Dir(toolDir)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("directory emptied by template removal still exists: %v", err)
+	}
 	got := readTestFile(t, sharedPath)
 	if bytes.Contains(got, []byte("template: true")) ||
 		bytes.Contains(got, []byte("---")) ||
 		!bytes.Contains(got, []byte("service: true")) {
 		t.Fatalf("shared finalization is wrong:\n%s", got)
+	}
+}
+
+func TestRunPrunesDirectoriesEmptiedByCut(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	featureFile := func(path string) {
+		source := markerLine("//", "FILE", "update.self") + "\npackage sample\n"
+		writeTestFile(t, filepath.Join(root, filepath.FromSlash(path)), []byte(source), 0o644)
+	}
+	featureFile("prune/child/feature.go")
+	featureFile("retain/feature.go")
+	featureFile("retain-file/feature.go")
+	if err := os.MkdirAll(filepath.Join(root, "retain", "scaffold"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(root, "retain-file", "notes.txt"), []byte("keep\n"), 0o644)
+
+	var previewOutput bytes.Buffer
+	preview, err := Run(Options{
+		Root:   root,
+		Cuts:   mustCuts(t, "update.self"),
+		Stdout: &previewOutput,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"prune/child", "prune"}; !reflect.DeepEqual(preview.RemovedEmptyDirectories, want) {
+		t.Fatalf("preview empty directories = %#v, want %#v", preview.RemovedEmptyDirectories, want)
+	}
+	if !strings.Contains(
+		previewOutput.String(),
+		"would remove prune/ (empty after planned removals)\n\nWould remove",
+	) {
+		t.Fatalf("preview output has no separator before its summary:\n%s", previewOutput.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "prune", "child")); err != nil {
+		t.Fatalf("preview removed a directory: %v", err)
+	}
+
+	var applyOutput bytes.Buffer
+	applied, err := Run(Options{
+		Root:   root,
+		Cuts:   mustCuts(t, "update.self"),
+		Apply:  true,
+		Stdout: &applyOutput,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(applied, preview) {
+		t.Fatalf("applied result = %#v, want preview %#v", applied, preview)
+	}
+	if !strings.Contains(
+		applyOutput.String(),
+		"removed prune/ (empty after planned removals)\n\nRemoved",
+	) {
+		t.Fatalf("apply output has no separator before its summary:\n%s", applyOutput.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "prune")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("directory emptied by cut still exists: %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "retain", "scaffold")); err != nil || !info.IsDir() {
+		t.Fatalf("pre-existing empty directory was removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "retain-file", "notes.txt")); err != nil {
+		t.Fatalf("directory with retained content was removed: %v", err)
 	}
 }
 
@@ -178,7 +250,7 @@ func TestApplyPlansDeletesTemplateFilesLast(t *testing.T) {
 			data:     []byte("package main\n"),
 		},
 	}
-	if err := applyPlans(plans, nil); err == nil {
+	if err := applyPlans(plans, nil, nil); err == nil {
 		t.Fatal("applyPlans succeeded with an unwritable retained file")
 	}
 	if _, err := os.Stat(templatePath); err != nil {

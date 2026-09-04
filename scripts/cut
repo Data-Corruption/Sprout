@@ -17,9 +17,10 @@
 # Source blocks use exact BEGIN/END comments and whole owned files use a FILE
 # comment. Go/JavaScript, shell/YAML, and HTML comment forms are supported.
 # Cross-feature code uses nested blocks. Every plan also removes template-only
-# tooling, strips the surviving ownership comments, and rewrites Go imports when
-# --module is set. The default is a read-only preview; --finalize applies that
-# same plan and removes this tool, so no later cuts are possible.
+# tooling, prunes directories those removals leave empty, strips the surviving
+# ownership comments, and rewrites Go imports when --module is set. The default
+# is a read-only preview; --finalize applies that same plan and removes this
+# tool, so no later cuts are possible.
 #
 # This is a destructive first-use tool, not a migration system: finalize on a
 # branch or commit before modifying or deploying the application, use version
