@@ -157,9 +157,10 @@ and `internal/ui/assets/js/src/`.
 ## Style
 
 Explicit errors wrapped with `%w`, `errors.Join` for cleanup, `sync.Once` for
-idempotent close, context cancellation as the cooperative stop everywhere.
-Comments explain why an ordering or check exists, not what the next line does.
-Tests use only the standard `testing` package, open real SQLite in
+idempotent close, context cancellation as the cooperative stop everywhere
+(doesn't need handling *everywhere*, e.g. database txns. Just try not to block
+forever). Comments explain why an ordering or check exists, not what the next
+line does. Tests use only the standard `testing` package, open real SQLite in
 `t.TempDir()`, and spawn real subprocesses for cross-process claims. Keep it
 that way.
 

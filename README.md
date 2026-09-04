@@ -41,7 +41,7 @@ covers the rest.
 
 Linux or WSL on `amd64`/`arm64`, the Go version in `go.mod`, Bash, and `curl`.
 Race-enabled tests also need GCC. Release binaries target Linux and Windows 11
-on both architectures; macOS and BSD are not supported.
+on both architectures; macOS and BSD are not currently supported.
 
 ## License
 
