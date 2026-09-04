@@ -56,6 +56,16 @@ func TestRunRenameModulePreviewAndFinalize(t *testing.T) {
 	if err := os.WriteFile(goModPath, []byte("module sprout\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "internal", "build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(root, "internal", "build", "build.go"),
+		[]byte("package build\n\nconst Name = \"sample\"\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
 	// The import has to be referenced: finalizing runs goimports, which would
 	// otherwise (correctly) drop it before the rename could be observed.
 	if err := os.WriteFile(

@@ -96,6 +96,69 @@ func TestRunRejectsInvalidGoimportsBeforeApplying(t *testing.T) {
 	}
 }
 
+func TestRunTidiesModuleAfterCut(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	goModPath := filepath.Join(root, "go.mod")
+	goSumPath := filepath.Join(root, "go.sum")
+	writeTestFile(t, goModPath, []byte(
+		"module example.com/sample\n\n"+
+			"go 1.26.5\n\n"+
+			"require golang.org/x/time v0.15.0\n",
+	), 0o644)
+	writeTestFile(t, goSumPath, []byte(
+		"golang.org/x/time v0.15.0 h1:bbrp8t3bGUeFOx08pvsMYRTCVSMk89u4tKbNOZbp88U=\n"+
+			"golang.org/x/time v0.15.0/go.mod h1:Y4YMaQmXwGQZoFaVFk4YpCt4FLQMYKZe9oeV/f4MSno=\n",
+	), 0o644)
+	featurePath := filepath.Join(root, "feature.go")
+	feature := markerLine("//", "FILE", "update") +
+		"\npackage sample\n\nimport _ \"golang.org/x/time/rate\"\n"
+	writeTestFile(t, featurePath, []byte(feature), 0o644)
+
+	if _, err := Run(Options{Root: root, Cuts: mustCuts(t, "update"), Apply: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTestFile(t, goModPath); bytes.Contains(got, []byte("golang.org/x/time")) {
+		t.Fatalf("go mod tidy retained unused requirement:\n%s", got)
+	}
+	if got, err := os.ReadFile(goSumPath); err == nil {
+		if bytes.Contains(got, []byte("golang.org/x/time")) {
+			t.Fatalf("go mod tidy retained unused sums:\n%s", got)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("read tidied go.sum: %v", err)
+	}
+}
+
+func TestRunWarnsWhenGoModTidyFails(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "go.mod"), []byte("module example.com/sample\n\ngo 1.26.5\n"), 0o644)
+	featurePath := filepath.Join(root, "feature.go")
+	feature := markerLine("//", "FILE", "update") + "\npackage sample\n"
+	writeTestFile(t, featurePath, []byte(feature), 0o644)
+
+	var output bytes.Buffer
+	_, err := Run(Options{
+		Root:   root,
+		Cuts:   mustCuts(t, "update"),
+		Apply:  true,
+		Stdout: &output,
+		Go:     filepath.Join(root, "missing-go"),
+	})
+	if err != nil {
+		t.Fatalf("Run failed because go mod tidy failed: %v", err)
+	}
+	if !strings.Contains(output.String(), "Warning: go mod tidy failed; the cut continued") {
+		t.Fatalf("Run did not report the tidy warning:\n%s", output.String())
+	}
+	if _, err := os.Stat(featurePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("cut did not remove feature after tidy warning: %v", err)
+	}
+}
+
 func TestRunFinalizesTemplateOwnership(t *testing.T) {
 	t.Parallel()
 
@@ -524,6 +587,12 @@ func TestRunRenamesModuleAfterCut(t *testing.T) {
 	root := t.TempDir()
 	goModPath := filepath.Join(root, "go.mod")
 	writeTestFile(t, goModPath, []byte("module sprout\n\ngo 1.26.5\n"), 0o644)
+	writeTestFile(
+		t,
+		filepath.Join(root, "internal", "keep", "keep.go"),
+		[]byte("package keep\n\nconst Value = true\n"),
+		0o644,
+	)
 
 	mainPath := filepath.Join(root, "main.go")
 	source := "package sample\n\nimport (\n" +

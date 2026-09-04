@@ -23,6 +23,9 @@ type Options struct {
 	Apply  bool
 	Module string
 	Stdout io.Writer
+	// Go is the Go command used for the best-effort module tidy after a cut.
+	// Empty falls back to PATH.
+	Go string
 	// Goimports is the path to the goimports binary used to prune imports
 	// left unused by removed blocks. Required when Apply rewrites Go files;
 	// scripts/cut supplies the pinned one from scripts/vendor.sh. Empty falls
@@ -202,7 +205,8 @@ func Run(options Options) (Result, error) {
 			output,
 			"Preview only; re-run with --finalize to apply this plan.\n"+
 				"--finalize also runs goimports over the rewritten Go files, so imports\n"+
-				"left unused by removed blocks disappear then rather than here.",
+				"left unused by removed blocks disappear then rather than here. It then\n"+
+				"runs go mod tidy to clean unused module requirements.",
 		); err != nil {
 			return Result{}, err
 		}
@@ -229,11 +233,25 @@ func Run(options Options) (Result, error) {
 			return Result{}, err
 		}
 	}
+	goTool := options.Go
+	if goTool == "" {
+		goTool = "go"
+	}
+	tidyErr := runGoModTidy(goTool, root)
 	if err := Verify(root, result); err != nil {
 		return Result{}, err
 	}
 	if err := reportPlans(output, plans, templateDirectories, emptyDirectories, false); err != nil {
 		return Result{}, err
+	}
+	if tidyErr != nil {
+		if _, err := fmt.Fprintf(
+			output,
+			"Warning: go mod tidy failed; the cut continued. Run it manually: %v\n",
+			tidyErr,
+		); err != nil {
+			return Result{}, err
+		}
 	}
 	if _, err := fmt.Fprintln(output, "Verify with: ./scripts/test.sh"); err != nil {
 		return Result{}, err
@@ -291,6 +309,21 @@ func runGoimports(binary, root, localPrefix string, files []string) error {
 	command.Dir = root
 	if output, err := command.CombinedOutput(); err != nil {
 		return fmt.Errorf("prune imports with goimports: %w\n%s", err, output)
+	}
+	return nil
+}
+
+func runGoModTidy(binary, root string) error {
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("inspect go.mod: %w", err)
+	}
+	command := exec.Command(binary, "mod", "tidy")
+	command.Dir = root
+	if output, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("run go mod tidy: %w\n%s", err, output)
 	}
 	return nil
 }

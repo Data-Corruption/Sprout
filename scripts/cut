@@ -27,9 +27,10 @@
 # control to undo it, and run `./scripts/test.sh` on the resulting tree.
 #
 # Previewing needs no network. Finalizing runs goimports over the rewritten Go
-# sources, so removed blocks do not leave unused imports behind; the first
-# finalize on a machine fetches the pinned goimports through scripts/vendor.sh
-# unless the same pinned version is already on PATH.
+# sources, then runs go mod tidy to prune unused module requirements. Tidy
+# failures warn without failing the cut. The first finalize on a machine fetches
+# the pinned goimports through scripts/vendor.sh unless the same pinned version
+# is already on PATH.
 
 set -euo pipefail
 

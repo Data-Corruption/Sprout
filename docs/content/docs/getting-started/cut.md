@@ -31,10 +31,14 @@ application. If anything listed surprises you, there ya go.
 
 The preview is not quite byte-for-byte. `--finalize` additionally runs
 `goimports` over the rewritten Go files, so imports left unreferenced by removed
-blocks disappear then rather than here. That is also why finalizing may need
-network access on a machine that has neither `goimports` on `PATH` nor a copy in
-`tools/`; a `goimports` on `PATH` is reused only when its embedded module version
-matches the pin. Previewing never needs the tool or network.
+blocks disappear then rather than here. Finalization follows that pass with
+`go mod tidy` to remove module requirements the final source no longer uses. A
+tidy failure prints a warning but does not fail the cut; run it manually after
+resolving the reported problem. Finalizing may need network access on a machine
+that has neither `goimports` on `PATH` nor a copy in `tools/`, or whose module
+cache does not contain required dependencies. A `goimports` on `PATH` is reused
+only when its embedded module version matches the pin. Previewing never needs
+the tool or network.
 
 ## Make it
 
@@ -56,10 +60,11 @@ files and fenced blocks, prunes directories those deletions leave empty,
 preserves file modes and line endings, formats changed Go, and writes through
 temporary files. It does not remove unrelated empty directories that existed
 before the cut. Retained files are rewritten before the cutter removes itself,
-then `goimports` prunes the imports those removals left unused and the cutter
-re-walks the tree to confirm no marker survived and every planned deletion
-happened. Every deletion is closed: nothing uncomments a fallback
-implementation, adds a missing import, or applies a hidden dependency rule.
+then `goimports` prunes the imports those removals left unused, `go mod tidy`
+cleans the module files, and the cutter re-walks the tree to confirm no marker
+survived and every planned deletion happened. Every deletion is closed: nothing
+uncomments a fallback implementation, adds a missing import, or applies a
+hidden dependency rule.
 
 And that's it, once the markers are gone there is no supported way to
 make another cut.
