@@ -78,10 +78,14 @@ check_var() {
   local key="$1"
   local expected="$2"
   local actual
-  # Try string value first, then non-string (bool/number)
-  actual=$(echo "$BUILD_VARS" | grep -oP "\"$key\":\"[^\"]*\"" | cut -d'"' -f4) || true
-  if [[ -z "$actual" ]]; then
-    actual=$(echo "$BUILD_VARS" | grep -oP "\"$key\":[^,}]+" | cut -d':' -f2)
+  local string_entry
+  # Keep the matched entry separate because an empty parsed string is valid;
+  # it must not be mistaken for a missing string entry.
+  string_entry=$(printf '%s\n' "$BUILD_VARS" | grep -oP "\"$key\":\"[^\"]*\"") || true
+  if [[ -n "$string_entry" ]]; then
+    actual=$(printf '%s\n' "$string_entry" | cut -d'"' -f4)
+  else
+    actual=$(printf '%s\n' "$BUILD_VARS" | grep -oP "\"$key\":[^,}]+" | cut -d':' -f2)
   fi
   if [[ "$actual" != "$expected" ]]; then
     echo "🔴 Error: $key mismatch. Expected '$expected', got '$actual'"
