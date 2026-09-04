@@ -1,0 +1,38 @@
+<!-- --- FILE service.https --- -->
+
+{{define "page_start"}}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{{ .Title }}</title>
+        <meta name="description" content="Application dashboard">
+        <link rel="icon" href="{{ .Favicon }}">
+        <link rel="stylesheet" href="{{ .CSS }}">
+        <script src="{{ .JS }}"></script>
+    </head>
+    <body class="min-h-screen bg-base-100">
+        <!-- Click Blocker - prevents interactions during async operations -->
+        <dialog id="click-blocker" class="m-0 h-screen w-screen max-h-screen max-w-[100vw] cursor-wait border-none bg-transparent p-0 outline-none"></dialog>
+        <!-- Shared alert/confirmation dialog -->
+        <dialog id="action-dialog" class="modal">
+            <div class="modal-box">
+                <h3 id="action-dialog-title" class="font-bold text-lg">Notice</h3>
+                <p id="action-dialog-message" class="py-4 text-base-content/70"></p>
+                <div class="modal-action">
+                    <form id="action-dialog-cancel-form" method="dialog">
+                        <button id="action-dialog-cancel" class="btn btn-ghost">Cancel</button>
+                    </form>
+                    <button id="action-dialog-confirm" class="btn btn-primary">Close</button>
+                </div>
+            </div>
+            <form method="dialog" class="modal-backdrop">
+                <button>close</button>
+            </form>
+        </dialog>
+        {{end}}
+        {{define "page_end"}}
+    </body>
+</html>
+{{end}}

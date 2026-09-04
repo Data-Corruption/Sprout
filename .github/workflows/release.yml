@@ -1,0 +1,399 @@
+name: Release
+
+# On push to main, scripts/build.sh (CI mode) builds/refreshes the release
+# artifact set. It verifies/uploads an immutable releases/<version> prefix,
+# promotes the root version pointer, and pushes the Git tag last. Installers
+# are signed and replaced independently only when their rendered bytes change.
+#
+# CI is opt-in for fresh template forks. A tiny gate job reports when the
+# CI_ENABLED repository variable is absent or false; every build, test, and
+# publication job stays skipped until it is exactly "true".
+#
+# GitHub's built-in "Re-run jobs" operation uses the original GITHUB_SHA and
+# GITHUB_REF, so interrupted publications resume at the same commit without a
+# workflow_dispatch trigger or a new push.
+#
+# DO NOT RENAME OR MOVE THIS FILE. Sigstore derives the keyless certificate
+# subject from the OIDC job_workflow_ref claim, which is this file's path:
+#
+#     https://github.com/OWNER/REPO/.github/workflows/release.yml@refs/heads/main
+#
+# That exact string is baked into install.sh, install.ps1, every released
+# binary, and the docs. Renaming or moving this file breaks signature
+# verification for every installation already in the field, and publishing a new
+# release cannot repair it, because existing installers verify against the old
+# identity before they will accept anything new. The contents are free to
+# change; only the path is frozen.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions: {}
+
+concurrency:
+  # Keep main releases serialized while allowing unrelated PRs to validate in
+  # parallel. A newer commit may replace an older run of the same PR.
+  group: release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - name: Check whether CI is enabled
+        id: check
+        env:
+          CI_ENABLED: ${{ vars.CI_ENABLED }}
+        run: |
+          if [[ "${CI_ENABLED:-}" == "true" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "CI_ENABLED=true; continuing."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CI is disabled. Set the CI_ENABLED repository variable to true to run validation and releases."
+          fi
+
+  # Native Windows coverage: compiles and runs the Go test suite with the
+  # windows build tags (pure Go, no C toolchain needed), and parses
+  # install.ps1 with real Windows PowerShell 5.1 - the interpreter
+  # `irm | iex` users actually run it with.
+  windows-test:
+    needs: ci-gate
+    if: ${{ needs.ci-gate.outputs.enabled == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.x"
+
+      # --- BEGIN template ---
+      # The Windows source variants finalize real trees and need goimports.
+      # scripts/vendor.sh cannot place a Windows binary, but it remains the
+      # single source for the version.
+      - name: Install pinned goimports
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/vendor.sh
+          go install "golang.org/x/tools/cmd/goimports@${GOIMPORTS_VERSION}"
+          goimports_bin="$(go env GOPATH)\\bin\\goimports.exe"
+          installed=$(go version -m "$goimports_bin" |
+            awk '$1=="mod" && $2=="golang.org/x/tools" {print $3}')
+          [[ "$installed" == "$GOIMPORTS_VERSION" ]] || {
+            echo "goimports reports ${installed:-unknown}, want $GOIMPORTS_VERSION" >&2
+            exit 1
+          }
+          echo "GOIMPORTS_BIN=$goimports_bin" >> "$GITHUB_ENV"
+          echo "$(go env GOPATH)\\bin" >> "$GITHUB_PATH"
+      # --- END template ---
+
+      # --- BEGIN service.https ---
+      # Generated frontend outputs are intentionally gitignored. The release
+      # job builds the real assets; this job only needs embed inputs to compile
+      # and run the Go test suite natively.
+      - name: Create compile-only frontend placeholders
+        shell: pwsh
+        run: |
+          Set-Content internal/ui/assets/css/output.css ""
+          Set-Content internal/ui/assets/js/output.js ""
+          Set-Content internal/ui/assets/manifest.json '{"css/output.css":"test","js/output.js":"test"}'
+      # --- END service.https ---
+
+      - name: Test native Windows build
+        shell: pwsh
+        run: go test ./...
+
+      # --- BEGIN template ---
+      - name: Test Windows variants and parse all installers
+        shell: pwsh
+        run: |
+          $updates = @(
+            @{ Name = "no-update"; Cuts = @("update") },
+            @{ Name = "update-core"; Cuts = @("update.self", "update.notifications") },
+            @{ Name = "update-self"; Cuts = @("update.notifications") },
+            @{ Name = "update-notifications"; Cuts = @("update.self") },
+            @{ Name = "update-self-notifications"; Cuts = @("update.auto") },
+            @{ Name = "full-update"; Cuts = @() }
+          )
+          $services = @(
+            @{ Name = "no-service"; Cuts = @("service"); Https = $false },
+            @{ Name = "headless-service"; Cuts = @("service.https"); Https = $false },
+            @{ Name = "https-service"; Cuts = @(); Https = $true }
+          )
+          $variants = foreach ($update in $updates) {
+            foreach ($service in $services) {
+              @{
+                Name = $update.Name + "-" + $service.Name
+                Cuts = @($update.Cuts) + @($service.Cuts)
+                Https = $service.Https
+              }
+            }
+          }
+          $nativeTests = @(
+            "full-update-https-service",
+            "no-update-https-service",
+            "update-notifications-https-service",
+            "update-self-notifications-https-service",
+            "full-update-no-service",
+            "full-update-headless-service"
+          )
+          $archive = Join-Path $env:RUNNER_TEMP "sprout-source.zip"
+          git archive --format=zip -o $archive HEAD
+          foreach ($variant in $variants) {
+            $path = Join-Path $env:RUNNER_TEMP ("sprout-" + $variant.Name)
+            Expand-Archive -Path $archive -DestinationPath $path
+            $cutArgs = @(
+              "run", "./cmd/cut",
+              "--root", $path,
+              "--finalize",
+              "--goimports", $env:GOIMPORTS_BIN,
+              "--module", "example.com/sprout-windows-cut"
+            ) + $variant.Cuts
+            & go @cutArgs
+            if ($LASTEXITCODE -ne 0) {
+              throw "Source cut failed for $($variant.Name)"
+            }
+            if ($variant.Https) {
+              New-Item -ItemType Directory -Force (Join-Path $path "internal/ui/assets/css") | Out-Null
+              New-Item -ItemType Directory -Force (Join-Path $path "internal/ui/assets/js") | Out-Null
+              Set-Content (Join-Path $path "internal/ui/assets/css/output.css") ""
+              Set-Content (Join-Path $path "internal/ui/assets/js/output.js") ""
+              Set-Content (Join-Path $path "internal/ui/assets/manifest.json") '{"css/output.css":"test","js/output.js":"test"}'
+            }
+            Push-Location $path
+            try {
+              if ($nativeTests -contains $variant.Name) {
+                go test ./...
+                if ($LASTEXITCODE -ne 0) {
+                  throw "Go tests failed for $($variant.Name)"
+                }
+              }
+              $tokens = $null
+              $errors = $null
+              [System.Management.Automation.Language.Parser]::ParseFile(
+                (Resolve-Path "scripts/install.ps1"),
+                [ref]$tokens,
+                [ref]$errors
+              ) | Out-Null
+              if ($errors.Count -ne 0) {
+                $errors | ForEach-Object { Write-Error $_.Message }
+                throw "install.ps1 parse failed for $($variant.Name)"
+              }
+            } finally {
+              Pop-Location
+            }
+          }
+      # --- END template ---
+
+      - name: Parse install.ps1 (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          foreach ($path in @("scripts/install.ps1", "scripts/test-lifecycle-e2e.ps1")) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -ne 0) {
+              $errors | ForEach-Object { Write-Error "${path}: $_" }
+              exit 1
+            }
+          }
+
+      - name: Render exact Windows release candidate
+        shell: bash
+        run: |
+          source scripts/build.sh
+          detect_mode
+          RELEASE_DIR=out/windows-installer-candidate
+          package_installers
+
+      - name: Test exact Windows installer candidate
+        shell: powershell
+        run: scripts/test-lifecycle-e2e.ps1 -InstallerCandidate out/windows-installer-candidate/install.ps1
+
+  # --- BEGIN template ---
+  # Validate all 18 supported update/service source variants in isolated
+  # temporary copies, including surviving installer syntax and frontend states.
+  cut-matrix:
+    needs: ci-gate
+    if: ${{ needs.ci-gate.outputs.enabled == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run complete cut matrix
+        run: ./scripts/test.sh -cut
+  # --- END template ---
+
+  # Runs the install/update/uninstall lifecycle end-to-end inside Incus
+  # system containers for a representative distro subset (file:// release dir
+  # + APP_SKIP_VERIFY).
+  # Run ./scripts/test.sh -e2e locally for the full distro list.
+  lifecycle-e2e:
+    needs: ci-gate
+    if: ${{ needs.ci-gate.outputs.enabled == 'true' }}
+    # Ubuntu 24.04 provides Incus 6.0 LTS. System containers share the runner
+    # kernel, so this does not require nested virtualization or /dev/kvm.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install pinned rclone
+        run: |
+          set -euo pipefail
+          rclone_bin=$(./scripts/vendor.sh rclone | sed -n 's/^rclone=//p')
+          [[ -n "$rclone_bin" && -x "$rclone_bin" ]] || {
+            echo "vendor.sh returned no executable rclone path" >&2
+            exit 1
+          }
+          dirname "$rclone_bin" >> "$GITHUB_PATH"
+          "$rclone_bin" version
+
+      - name: Install and initialize Incus
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq incus
+          sudo systemctl start incus.socket
+          sudo incus admin init --minimal
+
+          # The hosted runner also runs Docker, whose global forwarding policy
+          # can otherwise drop traffic from the Incus managed bridge.
+          sudo sysctl -w net.ipv4.conf.all.forwarding=1
+          if sudo iptables -nL DOCKER-USER >/dev/null 2>&1; then
+            sudo iptables -C DOCKER-USER -i incusbr0 -j ACCEPT 2>/dev/null ||
+              sudo iptables -I DOCKER-USER -i incusbr0 -j ACCEPT
+            sudo iptables -C DOCKER-USER -o incusbr0 \
+              -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null ||
+              sudo iptables -I DOCKER-USER -o incusbr0 \
+                -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+          fi
+
+          sudo incus info
+          smoke="sprout-incus-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'sudo incus delete "$smoke" --force >/dev/null 2>&1 || :' EXIT
+          sudo incus init images:alpine/3.24 "$smoke"
+          sudo incus start "$smoke"
+          ready=false
+          for _ in {1..120}; do
+            if sudo incus exec "$smoke" -- true >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 0.25
+          done
+          if [[ "$ready" != "true" ]]; then
+            sudo incus info "$smoke" --show-log
+            exit 1
+          fi
+
+      # The only Linux run of the Go suite that survives finalize: cut-matrix
+      # is template-only and windows-test covers Windows.
+      - name: Test Go packages
+        run: ./scripts/test.sh
+
+      - name: Lint shell scripts
+        run: ./scripts/test.sh -lint
+
+      - name: Test release publication state machine
+        run: ./scripts/test.sh -release
+
+      - name: Run lifecycle E2E
+        run: ./scripts/test.sh -e2e --distros "debian ubuntu fedora arch alpine"
+
+      - name: Upload lifecycle E2E logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lifecycle-e2e-logs
+          path: out/lifecycle-e2e-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+  release:
+    # Pull requests never publish. Template forks must also opt in explicitly
+    # by setting CI_ENABLED=true after R2 secrets are configured.
+    if: ${{ needs.ci-gate.outputs.enabled == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs:
+      - ci-gate
+      - windows-test
+      # --- BEGIN template ---
+      - cut-matrix
+      # --- END template ---
+      - lifecycle-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # build.sh pushes the release tag
+      id-token: write # cosign keyless signing
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0 # full history + tags: build.sh checks/pushes release tags
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      # cosign is not installed here: build.sh vendors the pinned release
+      # itself, so CI signs with exactly the binary install.sh bootstraps.
+      - name: Install pinned rclone
+        run: |
+          set -euo pipefail
+          rclone_bin=$(./scripts/vendor.sh rclone | sed -n 's/^rclone=//p')
+          [[ -n "$rclone_bin" && -x "$rclone_bin" ]] || {
+            echo "vendor.sh returned no executable rclone path" >&2
+            exit 1
+          }
+          dirname "$rclone_bin" >> "$GITHUB_PATH"
+          "$rclone_bin" version
+
+      - name: Build, sign, and release
+        env:
+          VERBOSE: ${{ vars.VERBOSE }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: bash scripts/build.sh --prod-all

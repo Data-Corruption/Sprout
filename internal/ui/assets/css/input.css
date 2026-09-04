@@ -1,0 +1,15 @@
+/* --- FILE service.https --- */
+
+@import "tailwindcss";
+
+/* downloaded build tools live in tools/ at the repo root */
+@source not "../../../../tools";
+
+@plugin "../../../../tools/daisyui.mjs" {
+    themes: nord --default, forest --prefersdark;
+}
+
+/* Optional for custom themes – Docs: https://daisyui.com/docs/themes/#how-to-add-a-new-custom-theme */
+@plugin "../../../../tools/daisyui-theme.mjs" {
+    /* custom theme here */
+}

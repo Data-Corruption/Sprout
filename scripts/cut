@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# --- FILE template ---
+
+# Plan or finalize a fresh Sprout fork as a normal consumer source tree.
+#
+# Features form two dotted trees: update (with self, notifications, and auto)
+# and service (with https). Cutting a parent also cuts every dotted descendant;
+# cutting a child leaves its parent and siblings. Multiple arguments are a
+# union, for example:
+#
+#   ./scripts/cut --module example.com/me/app service.https update
+#     # preview a CLI-only, no-update tree
+#   ./scripts/cut --finalize --module example.com/me/app
+#     # keep every application feature and apply the final plan
+#
+# Source blocks use exact BEGIN/END comments and whole owned files use a FILE
+# comment. Go/JavaScript, shell/YAML, and HTML comment forms are supported.
+# Cross-feature code uses nested blocks. Every plan also removes template-only
+# tooling, strips the surviving ownership comments, and rewrites Go imports when
+# --module is set. The default is a read-only preview; --finalize applies that
+# same plan and removes this tool, so no later cuts are possible.
+#
+# This is a destructive first-use tool, not a migration system: finalize on a
+# branch or commit before modifying or deploying the application, use version
+# control to undo it, and run `./scripts/test.sh` on the resulting tree.
+#
+# Previewing needs no network. Finalizing runs goimports over the rewritten Go
+# sources, so removed blocks do not leave unused imports behind; the first
+# finalize on a machine fetches the pinned goimports through scripts/vendor.sh
+# unless the same pinned version is already on PATH.
+
+set -euo pipefail
+
+# shellcheck disable=SC1007 # empty CDPATH is deliberate so cd prints nothing
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+cd "$ROOT"
+
+FINALIZE=false
+for arg in "$@"; do
+  case "$arg" in
+    --finalize|-finalize)
+      FINALIZE=true
+      ;;
+    --finalize=*|-finalize=*)
+      case "${arg#*=}" in
+        1|t|T|true|TRUE|True) FINALIZE=true ;;
+      esac
+      ;;
+  esac
+done
+
+GOIMPORTS=""
+if $FINALIZE; then
+  GOIMPORTS=$(./scripts/vendor.sh goimports | sed -n 's/^goimports=//p')
+  if [[ -z "$GOIMPORTS" || ! -x "$GOIMPORTS" ]]; then
+    printf "error: vendor.sh returned no executable goimports path\n" >&2
+    exit 1
+  fi
+fi
+
+exec go run ./cmd/cut --root "$ROOT" --goimports "$GOIMPORTS" "$@"

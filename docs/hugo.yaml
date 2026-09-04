@@ -1,0 +1,67 @@
+baseURL: https://sproutcli.dev/
+title: Sprout
+description: >-
+  The ultimate tiny template for Go CLI apps and daemons.
+
+enableRobotsTXT: true
+publishDir: out
+refLinksErrorLevel: ERROR
+
+module:
+  hugoVersion:
+    extended: true
+    min: 0.146.0
+  imports:
+    - path: github.com/imfing/hextra
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+  highlight:
+    noClasses: false
+
+menu:
+  main:
+    - name: Documentation
+      pageRef: /docs
+      weight: 1
+    - name: Search
+      weight: 2
+      params:
+        type: search
+    - name: GitHub
+      url: https://github.com/Data-Corruption/Sprout
+      weight: 3
+      params:
+        icon: github
+
+params:
+  description: >-
+    The ultimate tiny template for Go CLI apps and daemons.
+  # Site-wide social preview. Hextra's opengraph partial and Hugo's embedded
+  # twitter_cards partial both fall back to the first entry when a page sets
+  # no images of its own. Crawlers want JPEG/PNG at 1200x630, not AVIF.
+  images:
+    - images/social-card.jpg
+  navbar:
+    displayTitle: true
+    displayLogo: false
+  theme:
+    default: system
+    displayToggle: true
+  footer:
+    enable: true
+    displayCopyright: false
+    displayPoweredBy: false
+  search:
+    enable: true
+    type: flexsearch
+  # Hextra defaults to mermaid@latest. Pin it; the fetched file is self-hosted
+  # and fingerprinted into the build, so only build-time fetches hit the CDN.
+  mermaid:
+    base: https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist
+  editURL:
+    enable: false
+  page:
+    displayPagination: true

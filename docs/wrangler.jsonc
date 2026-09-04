@@ -1,0 +1,11 @@
+// Cloudflare Workers Static Assets config for the end-user docs site.
+// Assets-only (no worker script); deployed by .github/workflows/docs.yml.
+// See DEPLOYMENT.md for the one-time Cloudflare setup.
+{
+	"name": "sprout-docs",
+	"compatibility_date": "2026-07-01",
+	"assets": {
+		"directory": "./out",
+		"not_found_handling": "404-page"
+	}
+}

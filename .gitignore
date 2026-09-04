@@ -1,0 +1,27 @@
+# Build outputs
+/tools/
+/out/
+/internal/ui/assets/css/output.css
+/internal/ui/assets/js/output.js
+/internal/ui/assets/manifest.json
+/coverage.out
+*.test
+*.prof
+
+# Documentation outputs
+/docs/.hugo_build.lock
+/docs/out/
+/docs/resources/_gen/
+
+# Local notes
+/scratch-pad.md
+/scratch-transplant.md
+
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx

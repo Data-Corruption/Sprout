@@ -1,0 +1,32 @@
+{{- /*
+  Hextra emits og:image and Hugo emits twitter:image from site.Params.images,
+  but neither adds the dimensions, type, or alt that let scrapers render the
+  card without fetching the image first. Only the site-wide fallback is
+  described here; a page that sets its own images opts out.
+*/ -}}
+{{- if not .Params.images -}}
+  {{- with site.Params.images -}}
+    {{- $card := index . 0 -}}
+    {{- if not (fileExists (printf "static/%s" $card)) -}}
+      {{- errorf "social card image not found: static/%s" $card -}}
+    {{- end -}}
+    <meta property="og:image:type" content="image/jpeg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Albert Bierstadt's Mount Corcoran, with a small Go gopher on the lakeshore">
+    <meta name="twitter:image:alt" content="Albert Bierstadt's Mount Corcoran, with a small Go gopher on the lakeshore">
+  {{- end -}}
+{{- end -}}
+{{- if .IsHome -}}
+  {{- $hero := "images/mount_gorcoran.avif" -}}
+  {{- if not (fileExists "static/images/mount_gorcoran.avif") -}}
+    {{- errorf "landing page hero image not found" -}}
+  {{- end -}}
+  <link
+    rel="preload"
+    as="image"
+    href="{{ $hero | relURL }}"
+    type="image/avif"
+    fetchpriority="high"
+  >
+{{- end -}}
