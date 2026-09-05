@@ -14,8 +14,7 @@
 /docs/resources/_gen/
 
 # Local notes
-/scratch-pad.md
-/scratch-transplant.md
+/docs/local/
 
 # Local secrets and credentials
 .env

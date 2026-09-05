@@ -23,7 +23,7 @@ build will use that instead.
 
 ## Steps
 
-**Configure** (A generator automates these for convenience)
+**Configure** ([Transplant](create/#with-transplant) automates these for convenience)
 
 1. [Create your project](create/) - Use the GitHub template / setup your repo.
 2. [Choose features](features/) - Update behavior and service shape. Decide what you don't want.

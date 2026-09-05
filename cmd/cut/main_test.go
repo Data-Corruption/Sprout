@@ -3,11 +3,53 @@
 package main
 
 import (
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"sprout/internal/cut"
 )
+
+func TestRunFeatureContractWithoutCheckout(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = original; r.Close(); w.Close() }()
+	code := run([]string{"--list-features-json", "--root", filepath.Join(t.TempDir(), "missing")})
+	w.Close()
+	os.Stdout = original
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 {
+		t.Fatalf("contract returned %d", code)
+	}
+	var got cut.Contract
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("not pure JSON: %v\n%s", err, data)
+	}
+	if got.Version != 1 || len(got.Features) != len(cut.Features()) {
+		t.Fatalf("unexpected contract: %+v", got)
+	}
+	for i, feature := range got.Features {
+		name := cut.Features()[i]
+		if feature.Name != name || strings.Join(feature.Prerequisites, ",") != strings.Join(cut.Prerequisites(name), ",") {
+			t.Fatalf("contract disagrees with cutter: %+v", feature)
+		}
+	}
+	for _, args := range [][]string{{"--finalize"}, {"--module", "example.com/me/app"}, {"service"}} {
+		if code := run(append([]string{"--list-features-json"}, args...)); code != 2 {
+			t.Fatalf("accepted mixed discovery args: %v", args)
+		}
+	}
+}
 
 func TestRunPreviewsFinalTreeByDefault(t *testing.T) {
 	root := t.TempDir()

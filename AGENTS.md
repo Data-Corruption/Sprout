@@ -197,3 +197,30 @@ not a marker candidate.
   `.github/workflows/release.yml`. Never rename or move that file.
 - `scratch-pad.md`, when present, is gitignored upstream design rationale.
   Trust the code over it.
+
+## Things `transplant` depends on
+
+These are a versioned contract for the separate setup wizard. If their
+semantics change, bump `Contract.Version` in `internal/cut/features.go` and
+coordinate the change with Transplant.
+
+- `scripts/cut --list-features-json` prints only JSON on stdout, with
+  `version: 1` and a `features` array of `{name, prerequisites}` records derived
+  from the cutter's graph. It exits without inspecting or editing the tree.
+  Discovery cannot be combined with `--finalize`, `--module`, or feature names.
+- `scripts/cut` previews by default, accepts `--finalize`, `--module`, and
+  positional feature names, and exits nonzero on failure. Removal expands
+  transitively: apply requires update; automatic application requires apply
+  and service; HTTPS requires service. The canonical names are `update`,
+  `update.apply`, `update.apply.auto`, `service`, and `service.https`.
+- `scripts/build.sh` has exactly one `# Project config ---...` section ending
+  at the next named section rule. Its exact `NAME="value"` assignments are
+  `APP_NAME`, `RELEASE_URL`, `CONTACT_URL`, `DEFAULT_LOG_LEVEL`, plus
+  `SERVICE_DESC` when service survives and `SERVICE_DEFAULT_PORT` when HTTPS
+  survives. The service fallbacks outside that section are not project inputs.
+- Markdown-only docs means retaining `docs/content/docs/**` and
+  `docs/MAINTENANCE.md`; everything else under `docs/` may be pruned.
+
+Transplant owns the questions and validates this contract before editing; the
+checkout's own cutter owns dependency expansion and finalization. Metadata and
+all cutter tooling remain template-only and disappear during finalization.

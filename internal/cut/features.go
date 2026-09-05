@@ -42,6 +42,29 @@ func Features() []string {
 	return append([]string(nil), featureNames...)
 }
 
+// Contract is the discovery protocol used by transplant before it edits a tree.
+// Bump Version when the CLI, project-block, or docs-layout contract changes.
+type Contract struct {
+	Version  int       `json:"version"`
+	Features []Feature `json:"features"`
+}
+
+type Feature struct {
+	Name          string   `json:"name"`
+	Prerequisites []string `json:"prerequisites"`
+}
+
+func FeatureContract() Contract {
+	contract := Contract{Version: 1}
+	for _, name := range Features() {
+		contract.Features = append(contract.Features, Feature{
+			Name:          name,
+			Prerequisites: append([]string{}, Prerequisites(name)...),
+		})
+	}
+	return contract
+}
+
 // Prerequisites returns the features required by name. This is the dependency
 // graph used by the cutter, its preview, and the source-shape matrix.
 func Prerequisites(name string) []string {

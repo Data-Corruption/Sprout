@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -23,6 +24,7 @@ func run(args []string) int {
 	modulePath := fs.String("module", "", "rename the Go module in the final tree")
 	root := fs.String("root", "", "repository root (defaults to parent of scripts/ when invoked via scripts/cut)")
 	goimports := fs.String("goimports", "", "goimports binary used to prune imports on --finalize (defaults to PATH)")
+	listFeatures := fs.Bool("list-features-json", false, "print the versioned feature contract as JSON and exit")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage: cut [flags] [feature...]
 
@@ -51,6 +53,17 @@ Flags:
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *listFeatures {
+		if *finalize || *modulePath != "" || len(fs.Args()) != 0 {
+			fmt.Fprintln(os.Stderr, "cut: --list-features-json cannot be combined with --finalize, --module, or features")
+			return 2
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(cut.FeatureContract()); err != nil {
+			fmt.Fprintf(os.Stderr, "cut: write feature contract: %v\n", err)
+			return 1
+		}
+		return 0
 	}
 	var cuts cut.Set
 	var err error

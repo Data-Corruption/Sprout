@@ -23,19 +23,25 @@ ever. https://youtu.be/-7ijI-g4jHg -->
 
 ## Quick start
 
+Install Transplant on Linux or in WSL:
+
 ```sh
-# Use "Use this template" on GitHub, then:
-git clone https://github.com/YOU/YOUR_APP.git
-cd YOUR_APP
-./scripts/test.sh
-./scripts/cut --module github.com/YOU/YOUR_APP            # preview
-./scripts/cut --finalize --module github.com/YOU/YOUR_APP # apply
-./scripts/build.sh
+curl -fsSL https://releases.sproutcli.dev/transplant/install.sh | sh
 ```
 
-Pass feature names to `cut` (for example `service.https update`) to remove
-them. The [getting started guide](https://sproutcli.dev/docs/getting-started/)
-covers the rest.
+Use [Sprout as a GitHub template](https://github.com/Data-Corruption/Sprout/generate),
+then clone your new repo and run the wizard:
+
+```sh
+git clone https://github.com/YOU/YOUR_APP.git
+cd YOUR_APP
+transplant
+```
+
+It walks you through features and project settings, previews the cut, and tests
+and builds the result. The [getting started guide](https://sproutcli.dev/docs/getting-started/)
+covers the next steps and the manual setup path. For more wizard options, see
+[Transplant's README](https://github.com/Data-Corruption/Transplant#script-it).
 
 ## Requirements
 

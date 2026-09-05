@@ -3,7 +3,8 @@
 Thanks for looking. This file is short on purpose; `AGENTS.md` is the real
 orientation for anyone changing code, human or otherwise, and the docs under
 `docs/content/docs/` go into more detail. Read those first. This file is for
-the upstream Sprout template. The generator will remove it.
+the upstream Sprout template. Transplant keeps it in generated projects; adapt
+it for your app and remove any upstream-only guidance below.
 
 ## Before you start
 

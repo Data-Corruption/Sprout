@@ -6,9 +6,34 @@ weight: 1
 Sprout is a template, so there is no "sprout" dependency that exists afterwards.
 You take a copy of a working application and it becomes yours immediately.
 
-The manual path is complete and supported. A planned interactive generator
-will automate the same steps as convenience tooling; it is not required to
-build or ship an application from Sprout.
+Transplant automates steps 1–3 from inside your fresh template copy. The manual
+path below is complete and supported too.
+
+## With Transplant
+
+Install Transplant on Linux or in WSL:
+
+```sh
+curl -fsSL https://releases.sproutcli.dev/transplant/install.sh | sh
+```
+
+Use [Sprout as a GitHub template](https://github.com/Data-Corruption/Sprout/generate),
+then clone your new repository and run the wizard:
+
+```sh
+git clone https://github.com/YOU/YOUR_APP.git
+cd YOUR_APP
+transplant
+```
+
+It asks what you're building, previews this checkout's own `scripts/cut` plan,
+fills in the project config, adds your copyright notice while preserving the
+MIT notice, handles the inherited docs, runs tests and a dev build, and offers
+a setup commit. `--preview` leaves the checkout alone; every answer has a flag
+for scripted use. Development is Linux/WSL only.
+
+After setup, head to [step 4]({{% relref "docs/getting-started/build" %}}).
+Need more options? See the [Transplant README](https://github.com/Data-Corruption/Transplant#script-it).
 
 ## The manual path
 
@@ -40,16 +65,6 @@ You should now be able to run the tests on the unmodified template:
 This creates compile-only frontend placeholders when a fresh clone has no
 generated assets, then runs `go test -race ./...`. Green here gives you a clean
 baseline for the changes that follow.
-
-## Planned convenience generator
-
-The planned generator is a small separate CLI that will ask what you're
-building, keep or cut the
-[supported features]({{% relref "docs/getting-started/features" %}}), rename the
-project, run the real test suite, and remove template-only setup machinery. It
-will call the same finalization path documented in
-[step 3]({{% relref "docs/getting-started/cut" %}}), not introduce a second
-templating system.
 
 ---
 
