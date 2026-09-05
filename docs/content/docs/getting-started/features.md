@@ -14,22 +14,23 @@ you cut the ones you don't want.
 ## What's on the menu
 
 ```text
-update
-├── update.self
-├── update.notifications
-└── update.auto
+update                         release discovery and notices
+└── update.apply               apply an update on request
+    └── update.apply.auto      apply unattended; also requires service
 
 service
 └── service.https
 ```
 
-It's a short list. They combine into eighteen possible source outputs, six
-update policies times three service shapes. Upstream CI runs
-`go test -race ./...` against every one of them, so whatever you pick is a
-combination already tested.
+These are cumulative capabilities: application of updates needs discovery,
+and unattended application needs both manual application and a running service.
+The cutter knows these dependencies. Cutting a prerequisite also removes its
+dependents; the preview explains each removal. Cutting `service`, for example,
+also cuts `service.https` and `update.apply.auto`.
 
-Cutting a parent cuts its children. Cutting a child leaves its parent and
-siblings. Multiple names are a union.
+There are eleven valid source outputs. Three nonautomatic update levels combine
+with all three service shapes; automatic updates combine with the two shapes
+that retain the service. Upstream CI tests every one.
 
 ## Pick a service shape
 
@@ -59,37 +60,61 @@ func runWorker(ctx context.Context, app *app.App) error
 If your application is a bot, a scheduler, a queue consumer, or a local
 protocol server, that function is where it goes.
 
-## Pick an update policy
+## Pick an update capability
 
 | You want | Cut |
 |---|---|
-| No update code at all. User updates by rerunning the install command | `update` |
-| `<app> update` and it only checks. User does the update by rerunning the install command | `update.self update.notifications` |
-| `<app> update` offers to do the update if a new version is present. If the dashboard is present a button to update remotely is also included. | `update.notifications` |
-| Daily checks plus CLI and dashboard notifications. User does the update by rerunning the install command | `update.self` |
-| Daily checks, self-update offer, dashboard button, and notifications | `update.auto` |
-| All of it, including unattended updates that happen during the daily check. | nothing |
+| Updates handled outside the application | `update` |
+| Discovery and notices; users apply updates by rerunning the installer | `update.apply` |
+| CLI confirmation and dashboard action to apply updates | `update.apply.auto` |
+| Also support unattended updates from the service | nothing; retain `service` |
 
-Base `update` is just the ability to check releases. `update.self` lets the running
-binary launch the verified installer against itself. `update.notifications`
-adds persisted notification state, the roughly daily checker, and the notices
-that surface in the CLI and dashboard. `update.auto` is only the detached
-launch that the periodic checker performs when it finds something newer.
+Base `update` owns explicit checks, cached release information, CLI/dashboard
+notices, and roughly daily background checks. CLI processes check opportunistically
+while a command runs; the service can keep checking while the application is idle.
+A short CLI command may finish before its check does. Shutdown cancels and joins
+the check, and CLI background checks never install anything.
 
-Cutting every update feature doesn't cut updating. Re-running the original
-install command always replaces the binary safely, coordinates running
-processes, and migrates. Failures before migration starts can restore the
-previous installed state; once migration is invoked, rerunning the installer is
-the recovery path. What `update.self` removes is the application's ability to
-*start* that itself, which is the point when updates have to pass through an
-administrator, an approved mirror, or a deployment system rather than being
-initiated by the app.
+`update.apply` adds `<app> update` confirmation, `--yes` for noninteractive
+application, and the dashboard update action when HTTPS is retained. The binary
+admits a detached, verified installer; the installer still owns all changes to
+the installation.
 
-`update.auto` is a sibling name for easy selection, but its code is nested
-inside both prerequisites, so cutting self-update or notifications removes
-automatic updates too. There is no second scheduler hiding in the shrubbery.
-The ergonomics of this could be a little better but the idea should be clear
-enough and you only need to do this once.
+`update.apply.auto` adds unattended application and retries in the service.
+Keeping this source capability does not opt an installation into unattended
+updates: enable that preference explicitly with `<app> update --automatic=true`.
+
+### Installation preferences
+
+These settings control retained capabilities; they cannot restore cut code.
+
+```sh
+<app> update --notify=false       # hide CLI and dashboard notices
+<app> update --background=false   # stop background checks and automatic application
+<app> update --automatic=true    # enable unattended application (requires service)
+<app> update --automatic=false   # keep checking, require a manual update request
+```
+
+Notices and background checks default to enabled; unattended application defaults
+to disabled. Enabling automatic application also enables background checks unless
+`--background` is explicitly supplied in the same command. Hiding notices does
+not disable checking or automatic application. Explicit `<app> update` checks
+regardless of the background preference. The service rereads preferences within
+one minute; a maintenance job already admitted continues to completion.
+
+Cutting all update features does not cut updating. Rerunning the installer
+still replaces the binary safely, coordinates running processes, and migrates.
+Failures before migration starts can restore the previous installed state;
+after migration is invoked, rerunning the installer is the recovery path.
+
+### Choose where releases come from
+
+The installer persists its effective release URL, including an `APP_RELEASE_URL`
+mirror override. All retained update capabilities use that source and continue
+to verify against the application's original signing identity. A mirror can
+therefore stage and approve releases before advancing its own `version` pointer;
+its users only discover releases that it has promoted. See
+[End-user mirror]({{% relref "docs/getting-started/mirror" %}}).
 
 {{< callout type="information" >}}
 On Linux, a detached update launched from inside the systemd-managed service

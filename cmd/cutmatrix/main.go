@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"sprout/internal/cut"
 )
 
 type variant struct {
@@ -27,31 +30,10 @@ type variant struct {
 	hasHTTPS bool
 }
 
-var updateVariants = []variant{
-	{name: "no-update", cuts: []string{"update"}},
-	{name: "update-core", cuts: []string{"update.self", "update.notifications"}},
-	{name: "update-self", cuts: []string{"update.notifications"}},
-	{name: "update-notifications", cuts: []string{"update.self"}},
-	{name: "update-self-notifications", cuts: []string{"update.auto"}},
-	{name: "full-update"},
-}
-
-var serviceVariants = []variant{
-	{name: "no-service", cuts: []string{"service"}},
-	{name: "headless-service", cuts: []string{"service.https"}},
-	{name: "https-service", hasHTTPS: true},
-}
-
 func canonicalVariants() []variant {
 	var variants []variant
-	for _, update := range updateVariants {
-		for _, service := range serviceVariants {
-			variants = append(variants, variant{
-				name:     update.name + "-" + service.name,
-				cuts:     append(append([]string{}, update.cuts...), service.cuts...),
-				hasHTTPS: service.hasHTTPS,
-			})
-		}
+	for _, item := range cut.Variants() {
+		variants = append(variants, variant{name: item.Name, cuts: item.Cuts, hasHTTPS: item.HTTPS})
 	}
 	return variants
 }
@@ -61,10 +43,18 @@ func main() {
 }
 
 func run() int {
+	listFlag := flag.Bool("list-json", false, "print the canonical feature matrix as JSON")
 	rootFlag := flag.String("root", ".", "Sprout repository root")
 	parallelFlag := flag.Int("parallel", min(2, runtime.NumCPU()), "maximum variants tested concurrently")
 	timeoutFlag := flag.Duration("timeout", 10*time.Minute, "timeout per variant")
 	flag.Parse()
+	if *listFlag {
+		if err := json.NewEncoder(os.Stdout).Encode(cut.Variants()); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
 
 	if *parallelFlag < 1 {
 		fmt.Fprintln(os.Stderr, "cutmatrix: parallel must be at least 1")
@@ -235,6 +225,32 @@ func validateFinalTree(root string, item variant) error {
 	hasPlaceholders := strings.Contains(string(workflow), "Create compile-only frontend placeholders")
 	if hasPlaceholders != hasHTTPS {
 		return fmt.Errorf("finalized frontend placeholders present = %t, want %t", hasPlaceholders, hasHTTPS)
+	}
+	uiInfo, err := os.Stat(filepath.Join(root, "internal", "ui"))
+	switch {
+	case err == nil && !hasHTTPS:
+		return fmt.Errorf("finalized tree retained internal/ui after cutting service.https")
+	case err == nil && !uiInfo.IsDir():
+		return fmt.Errorf("finalized internal/ui is not a directory")
+	case errors.Is(err, fs.ErrNotExist) && hasHTTPS:
+		return fmt.Errorf("finalized tree removed internal/ui while retaining service.https")
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("inspect finalized internal/ui: %w", err)
+	}
+	if err := validateUpdateHelperOwnership(root, item); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateUpdateHelperOwnership(root string, item variant) error {
+	_, err := os.Stat(filepath.Join(root, "internal", "app", "update_auto.go"))
+	want := !hasCut(item.cuts, "update.apply.auto")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if (err == nil) != want {
+		return fmt.Errorf("automatic update implementation present = %t, want %t", err == nil, want)
 	}
 	return nil
 }

@@ -10,7 +10,7 @@
                 <span class="text-2xl">🌱</span>
             </div>
 
-            <!-- --- BEGIN update.notifications --- -->
+            <!-- --- BEGIN update --- -->
             <!-- Update notification -->
             {{ if .UpdateAvailable }}
             <div role="alert" class="alert alert-info">
@@ -22,7 +22,7 @@
                 <span>A new version is available</span>
             </div>
             {{ end }}
-            <!-- --- END update.notifications --- -->
+            <!-- --- END update --- -->
 
             <!-- Restart Required Notice (hidden by default) -->
             <div id="restart-required-notice" role="alert" class="alert alert-warning hidden">
@@ -57,7 +57,7 @@
                             </svg>
                             Restart
                         </button>
-                        <!-- --- BEGIN update.self --- -->
+                        <!-- --- BEGIN update.apply --- -->
                         <button id="settings-update-btn" class="btn btn-secondary flex-1">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
                                 stroke="currentColor">
@@ -66,7 +66,7 @@
                             </svg>
                             Update
                         </button>
-                        <!-- --- END update.self --- -->
+                        <!-- --- END update.apply --- -->
                     </div>
                 </div>
             </div>

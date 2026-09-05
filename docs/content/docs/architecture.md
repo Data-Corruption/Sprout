@@ -284,9 +284,10 @@ production install's data, which could contain secrets or private state.
 
 ## Updates reuse installation
 
-The update features are a kind of restriction on update behavior. By default
-the app checks daily for updates and automatically applies them when a new
-version is available.  
+Update capabilities are chosen when finalizing the template. With discovery
+retained, the app checks roughly daily and shows notices by default. Applying
+updates unattended requires the automatic capability, the service, and an
+explicit installation preference.
 
 ```mermaid
 flowchart TB
@@ -294,7 +295,7 @@ flowchart TB
   checker["periodic checker"] --> newer{"newer version?"}
   newer -->|no| nothing["nothing happens"]
   newer -->|yes| notice["CLI and dashboard notices"]
-  notice --> detached["detached launch"]
+  newer -->|"yes; service and automatic preference"| detached["detached launch"]
   confirm --> installer["verified installer"]
   detached --> installer
   installer --> work["publish updating, stop processes,<br>take the lifecycle lock, replace the binary, migrate"]
@@ -304,26 +305,28 @@ flowchart TB
   ok -->|failed after migration started| recover["keep transitional state; rerun installer"]
 ```
 
-From here you can cut:
-- `update.auto`: starting the update on it's own during checks.
-- `update.self`: the ability for the binary to start updates period.
-- `update.notifications`: daily checks with cli / dashboard notification. 
-- `update`: all in binary update code. With just this, the update command
-  only checks if there is a new version. Without it you can still update
-  the app but you can only do it manually by repeating the install command.
+The update capabilities form a chain: `update` owns discovery and notices;
+`update.apply` adds user-requested application; `update.apply.auto` adds
+unattended application and also requires the service. Cutting a prerequisite
+removes its dependents. Removing all three still leaves installer-driven updates.
 
-This granular update restriction exists for security compliance. Some companies
-require their software doesn't even have the ability to self update.
-Additionally some require mirrors and staged verification. Sprout supports this
-well since the release is just a two level dir. You can copy the whole thing
-and have end-users set an env before the install command to use the mirror.
-More on that process
-[here]({{% relref "docs/getting-started/mirror" %}}).
+Notices and background checks are separate preferences, both enabled by default.
+Unattended application is disabled until explicitly enabled with
+`<app> update --automatic=true`. Ordinary commands never apply updates in the
+background. Hiding notices does not disable checking or unattended application.
 
-Official installers store their approved release URL in
-`maintenance/release-url`, and update checks read that file rather than
-trusting a hard-coded public URL. Mirror installs deliberately omit it, so an application managed by
-an organization does not wander off around its release policy.
+Installers persist their effective source in `maintenance/release-url`, including
+`APP_RELEASE_URL` mirror overrides. Checks and detached jobs use that source;
+the detached job passes it to the installer so future updates remain on the
+mirror. The original signing identity is enforced regardless of the source.
+A mirror operator stages and approves releases before moving the mirror's
+`version` pointer. [End-user mirror]({{% relref "docs/getting-started/mirror" %}})
+covers publication ordering and retention.
+
+Discovery persists the checked source, latest version, and timestamp. Availability
+is derived against the running version and current source. Installer admission
+has separate job state and does not clear the discovery result; successful
+upgrades and changes of source cannot leave a stale availability flag behind.
 
 Periodic checks claim one expiring database lease shared by every CLI and
 service process. Only the owner contacts the release host. On success, the
@@ -414,7 +417,7 @@ features mean there are a few source trees to test.
 ```mermaid
 flowchart TB
   unit["go test -race ./...<br>ordinary packages"] --> multi["subprocess tests<br>concurrent real processes"]
-  multi --> matrix["cut matrix<br>18 source trees"]
+  multi --> matrix["cut matrix<br>11 source trees"]
   matrix --> install["installer matrix<br>containers, 8 distros, Windows"]
   install --> release["release state machine<br>fake remote, interrupted publications"]
 ```
@@ -460,8 +463,9 @@ you can run as many CLI processes against a running service as you want.
 ./scripts/test.sh -cut
 ```
 
-Six update policies times three service shapes is 18 trees. For each one the
-harness copies the repo to a temp directory, runs `scripts/cut --finalize`
+The dependency graph has eleven valid update/service combinations. Both Linux
+and Windows matrices enumerate those combinations from the cutter's feature
+definitions. For each one the harness copies the repo to a temp directory, runs `scripts/cut --finalize`
 with a replacement module path and that variant's feature list, bundles the
 frontend when the dashboard survived, syntax-checks the surviving `install.sh`,
 and runs `go test -race ./...` inside it. A cut or rename that leaves an unused
@@ -547,7 +551,7 @@ enabled, three validation jobs run for pull requests targeting `main` and again
 after a push to `main`. A fourth publication job is eligible only on pushes,
 and only that job needs release secrets:
 
-- **cut-matrix** - the 18 trees above.
+- **cut-matrix** - the 11 trees above.
 - **lifecycle-e2e** - the race-enabled Go suite on Linux, shellcheck over the
   shell scripts, the release state machine, then the container lifecycle run
   for a representative distro subset.

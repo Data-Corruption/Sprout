@@ -71,14 +71,18 @@ func runMain() int {
 			if err != nil || cmd.Bool("migrate") {
 				return ctx, err
 			}
-			// --- BEGIN update.notifications ---
-			if err := application.StartUpdateCheckIfDue(ctx); err != nil {
-				// Update discovery is optional and must never prevent recovery or
-				// an unrelated command from running. Manual checks still return
-				// release-source errors directly.
-				application.Log.Errorf("start update check: %v", err)
+			// --- BEGIN update ---
+			// Before receives the root command, whose remaining args name the
+			// selected subcommand. Explicit updates own their own check.
+			if cmd.Args().First() != "update" {
+				if err := application.StartUpdateCheckIfDue(ctx); err != nil {
+					// Update discovery is optional and must never prevent recovery or
+					// an unrelated command from running. Manual checks still return
+					// release-source errors directly.
+					application.Log.Errorf("start update check: %v", err)
+				}
 			}
-			// --- END update.notifications ---
+			// --- END update ---
 			return ctx, nil
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

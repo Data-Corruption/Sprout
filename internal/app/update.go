@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"sprout/internal/platform/database/config"
+	"sprout/internal/types"
+
 	"golang.org/x/mod/semver"
 )
 
@@ -20,7 +23,7 @@ const (
 )
 
 var (
-	ErrUpdatesDisabled = errors.New("updates disabled: no release-url file (mirror install?)")
+	ErrUpdatesDisabled = errors.New("updates disabled: no release-url file")
 )
 
 func normalizeReleaseURL(raw string) (string, error) {
@@ -56,21 +59,45 @@ func (a *App) releaseURL() (string, error) {
 }
 
 // CheckForUpdate performs a fresh check against the configured release source.
-// Notification state, when retained, is persisted by the periodic checker.
+// The source, version, and check time are persisted for notices and the service.
 // Development builds return [ErrDevBuild]; installs without a release-url
 // return [ErrUpdatesDisabled].
 func (a *App) CheckForUpdate(ctx context.Context) (bool, error) {
 	a.updateCheckMu.Lock()
 	defer a.updateCheckMu.Unlock()
-	return a.checkForUpdate(ctx)
+	result, err := a.checkForUpdate(ctx)
+	if err != nil {
+		return false, err
+	}
+	if _, err := config.Update(a.DB, func(cfg *types.Configuration) error {
+		setUpdateCheckResult(cfg, result, time.Now())
+		return nil
+	}); err != nil {
+		return false, fmt.Errorf("persist update check: %w", err)
+	}
+	return result.available(a.buildInfo.Version), nil
 }
 
-func (a *App) checkForUpdate(ctx context.Context) (bool, error) {
+type updateResult struct{ source, version string }
+
+func (r updateResult) available(current string) bool {
+	return semver.IsValid(r.version) && semver.Compare(r.version, current) > 0
+}
+
+// UpdateAvailable derives availability only from the installation's current
+// source. A source change or successful upgrade cannot leave a stale notice.
+func (a *App) UpdateAvailable(cfg *types.Configuration) bool {
+	source, err := a.releaseURL()
+	return err == nil && !a.buildInfo.DevMode && source == cfg.UpdateCheckSource &&
+		(updateResult{version: cfg.LatestUpdateVersion}).available(a.buildInfo.Version)
+}
+
+func (a *App) checkForUpdate(ctx context.Context) (updateResult, error) {
 	if a.buildInfo.Version == "" {
-		return false, fmt.Errorf("app version is not set")
+		return updateResult{}, fmt.Errorf("app version is not set")
 	}
 	if a.buildInfo.DevMode {
-		return false, ErrDevBuild
+		return updateResult{}, ErrDevBuild
 	}
 
 	checkCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
@@ -78,15 +105,15 @@ func (a *App) checkForUpdate(ctx context.Context) (bool, error) {
 
 	releaseURL, err := a.releaseURL()
 	if err != nil {
-		return false, err
+		return updateResult{}, err
 	}
 	latest, err := a.ReleaseSource.GetLatestVersion(checkCtx, releaseURL)
 	if err != nil {
-		return false, err
+		return updateResult{}, err
 	}
 
 	updateAvailable := semver.Compare(latest, a.buildInfo.Version) > 0
 	a.Log.Debugf("Latest version: %s, Current version: %s, Update available: %t",
 		latest, a.buildInfo.Version, updateAvailable)
-	return updateAvailable, nil
+	return updateResult{source: releaseURL, version: latest}, nil
 }

@@ -96,7 +96,7 @@ func TestRestartAcceptedAfterPreparation(t *testing.T) {
 	}
 }
 
-// --- BEGIN update.self ---
+// --- BEGIN update.apply ---
 func TestUpdateRequiresPermission(t *testing.T) {
 	a := newSettingsTestApp(t)
 	checks, launches := 0, 0
@@ -216,4 +216,4 @@ func TestUpdateAcceptedOnlyAfterLaunch(t *testing.T) {
 	}
 }
 
-// --- END update.self ---
+// --- END update.apply ---

@@ -328,11 +328,20 @@ installer. Scripts have to opt in:
 Non-interactive input without `--yes` fails clearly rather than waiting forever
 for an answer nobody is there to give. Declining is a successful no-op.
 
-When notifications are retained, this toggles them:
+When update support is retained, notice display and background checking can be
+configured independently:
 
 ```sh
-<APP> update --notify
+<APP> update --notify=false
+<APP> update --background=false
 ```
+
+Both default to enabled. When `update.apply.auto` and the service are retained,
+`<APP> update --automatic=true` opts into unattended application and enables
+background checks. `--automatic=false` leaves checking enabled but requires a
+manual application request. Automatic application defaults to disabled; hiding
+notices does not affect it. The service rereads preferences within one minute;
+already admitted maintenance jobs continue independently.
 
 Periodic checks share an expiring database lease across all CLI and service
 processes, so only one process contacts the release host. A successful result
@@ -340,10 +349,11 @@ and lease release commit together; a failed request leaves the lease to expire
 instead of triggering a retry storm. An explicit `<APP> update` check bypasses
 that lease.
 
-Official installers persist their release source on the machine. Mirror and
-managed installs deliberately do not, so update checking stays off and the
-command tells the user to repeat their original installation or follow their
-administrator's instructions. It never quietly falls back to a public host.
+Installers persist their effective release source on the machine, including
+mirror overrides supplied through `APP_RELEASE_URL`. All update capabilities
+follow that source and keep verifying the original signing identity. Missing or
+invalid source metadata prevents updates without falling back to a public host.
+A mirror's root `version` pointer selects which approved release its users see.
 
 On Linux the update runs as a detached job. When the caller is itself the
 systemd-managed service (`NOTIFY_SOCKET` is set), the job is admitted through

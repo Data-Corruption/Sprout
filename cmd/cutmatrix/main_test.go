@@ -4,10 +4,10 @@ package main
 
 import "testing"
 
-func TestCanonicalVariantsCoverSixByThreeMatrix(t *testing.T) {
+func TestCanonicalVariantsCoverDependencyGraph(t *testing.T) {
 	variants := canonicalVariants()
-	if len(variants) != 18 {
-		t.Fatalf("variant count = %d, want 18", len(variants))
+	if len(variants) != 11 {
+		t.Fatalf("variant count = %d, want 11", len(variants))
 	}
 	names := make(map[string]bool, len(variants))
 	httpsCount := 0
@@ -20,7 +20,7 @@ func TestCanonicalVariantsCoverSixByThreeMatrix(t *testing.T) {
 			httpsCount++
 		}
 	}
-	if httpsCount != 6 {
-		t.Fatalf("HTTPS variant count = %d, want 6", httpsCount)
+	if httpsCount != 4 {
+		t.Fatalf("HTTPS variant count = %d, want 4", httpsCount)
 	}
 }

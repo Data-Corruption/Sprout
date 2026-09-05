@@ -1,11 +1,11 @@
 //go:build !windows
 
-// --- FILE update.notifications ---
+// --- FILE update ---
 
 package app
 
-// --- BEGIN update.self ---
-// --- BEGIN update.auto ---
+// --- BEGIN update.apply ---
+// --- BEGIN update.apply.auto ---
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func TestServiceConsumesOneShotThatCompletesWhileItWaits(t *testing.T) {
 		started: make(chan struct{}, 1),
 		release: make(chan struct{}),
 	}
-	a := newUpdateNotificationTestApp(t, source)
+	a := newUpdateTestApp(t, source)
 	a.buildInfo.Name = "sprout"
 	a.buildInfo.CertIdentity = "test-identity"
 	a.buildInfo.OidcIssuer = "test-issuer"
@@ -50,7 +50,8 @@ func TestServiceConsumesOneShotThatCompletesWhileItWaits(t *testing.T) {
 
 	if _, err := config.Update(a.DB, func(cfg *types.Configuration) error {
 		cfg.UpdateNotifications = true
-		cfg.UpdateAvailable = false
+		cfg.LatestUpdateVersion = ""
+		cfg.AutomaticUpdates = true
 		cfg.LastUpdateCheck = time.Time{}
 		return nil
 	}); err != nil {
@@ -107,5 +108,5 @@ func TestServiceConsumesOneShotThatCompletesWhileItWaits(t *testing.T) {
 	}
 }
 
-// --- END update.auto ---
-// --- END update.self ---
+// --- END update.apply.auto ---
+// --- END update.apply ---

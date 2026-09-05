@@ -22,21 +22,20 @@ func TestParseCuts(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Set{
-		"update":               {},
-		"update.self":          {},
-		"update.notifications": {},
-		"update.auto":          {},
-		"service.https":        {},
+		"update":            {},
+		"update.apply":      {},
+		"update.apply.auto": {},
+		"service.https":     {},
 	}
 	if !reflect.DeepEqual(cuts, want) {
 		t.Fatalf("cuts = %#v, want %#v", cuts, want)
 	}
 
-	child, err := ParseCuts([]string{"update.self"})
+	child, err := ParseCuts([]string{"update.apply"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (Set{"update.self": {}}); !reflect.DeepEqual(child, want) {
+	if want := (Set{"update.apply": {}, "update.apply.auto": {}}); !reflect.DeepEqual(child, want) {
 		t.Fatalf("child cut = %#v, want %#v", child, want)
 	}
 
@@ -230,7 +229,7 @@ func TestRunPrunesDirectoriesEmptiedByCut(t *testing.T) {
 
 	root := t.TempDir()
 	featureFile := func(path string) {
-		source := markerLine("//", "FILE", "update.self") + "\npackage sample\n"
+		source := markerLine("//", "FILE", "update.apply") + "\npackage sample\n"
 		writeTestFile(t, filepath.Join(root, filepath.FromSlash(path)), []byte(source), 0o644)
 	}
 	featureFile("prune/child/feature.go")
@@ -244,7 +243,7 @@ func TestRunPrunesDirectoriesEmptiedByCut(t *testing.T) {
 	var previewOutput bytes.Buffer
 	preview, err := Run(Options{
 		Root:   root,
-		Cuts:   mustCuts(t, "update.self"),
+		Cuts:   mustCuts(t, "update.apply"),
 		Stdout: &previewOutput,
 	})
 	if err != nil {
@@ -266,7 +265,7 @@ func TestRunPrunesDirectoriesEmptiedByCut(t *testing.T) {
 	var applyOutput bytes.Buffer
 	applied, err := Run(Options{
 		Root:   root,
-		Cuts:   mustCuts(t, "update.self"),
+		Cuts:   mustCuts(t, "update.apply"),
 		Apply:  true,
 		Stdout: &applyOutput,
 	})
@@ -329,9 +328,9 @@ func TestRunParentCutAndIdempotency(t *testing.T) {
 	source := "package sample\n\n" +
 		markerLine("//", "BEGIN", "update") +
 		"func Check() {}\n\n" +
-		markerLine("//", "BEGIN", "update.self") +
+		markerLine("//", "BEGIN", "update.apply") +
 		"func Apply() {}\n" +
-		markerLine("//", "END", "update.self") +
+		markerLine("//", "END", "update.apply") +
 		markerLine("//", "END", "update") + "\n" +
 		markerLine("//", "BEGIN", "service.https") +
 		"func Dashboard() {}\n" +
@@ -383,9 +382,9 @@ func TestRunMarkerStylesLineEndingsAndMode(t *testing.T) {
 	root := t.TempDir()
 	scriptPath := filepath.Join(root, "script.sh")
 	script := "#!/bin/sh\r\n\r\nkeep=true\r\n" +
-		toCRLF(markerLine("#", "BEGIN", "update.self")) +
+		toCRLF(markerLine("#", "BEGIN", "update.apply")) +
 		"self=true\r\n" +
-		toCRLF(markerLine("#", "END", "update.self"))
+		toCRLF(markerLine("#", "END", "update.apply"))
 	writeTestFile(t, scriptPath, []byte(script), 0o751)
 
 	htmlPath := filepath.Join(root, "page.html")
@@ -404,7 +403,7 @@ func TestRunMarkerStylesLineEndingsAndMode(t *testing.T) {
 
 	result, err := Run(Options{
 		Root:  root,
-		Cuts:  mustCuts(t, "update.self", "service.https"),
+		Cuts:  mustCuts(t, "update.apply", "service.https"),
 		Apply: true,
 	})
 	if err != nil {
@@ -444,11 +443,11 @@ func TestRunWholeFileAndPreview(t *testing.T) {
 		root := t.TempDir()
 		path := filepath.Join(root, "linux.go")
 		source := "//go:build linux\n\n" +
-			markerLine("//", "FILE", "update.self") +
+			markerLine("//", "FILE", "update.apply") +
 			"\npackage platform\n"
 		writeTestFile(t, path, []byte(source), 0o644)
 
-		result, err := Run(Options{Root: root, Cuts: mustCuts(t, "update.self"), Apply: true})
+		result, err := Run(Options{Root: root, Cuts: mustCuts(t, "update.apply"), Apply: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -464,15 +463,15 @@ func TestRunWholeFileAndPreview(t *testing.T) {
 		root := t.TempDir()
 		path := filepath.Join(root, "main.go")
 		source := "package sample\n\n" +
-			markerLine("//", "BEGIN", "update.self") +
+			markerLine("//", "BEGIN", "update.apply") +
 			"func Apply() {}\n" +
-			markerLine("//", "END", "update.self")
+			markerLine("//", "END", "update.apply")
 		writeTestFile(t, path, []byte(source), 0o644)
 
 		var output bytes.Buffer
 		result, err := Run(Options{
 			Root:   root,
-			Cuts:   mustCuts(t, "update.self"),
+			Cuts:   mustCuts(t, "update.apply"),
 			Stdout: &output,
 		})
 		if err != nil {
@@ -496,9 +495,9 @@ func TestRunFinalizesMarkers(t *testing.T) {
 		source := markerLine("//", "FILE", "update") +
 			"\npackage sample\n\n" +
 			"func Check() {}\n\n" +
-			markerLine("//", "BEGIN", "update.self") +
+			markerLine("//", "BEGIN", "update.apply") +
 			"func Apply() {}\n" +
-			markerLine("//", "END", "update.self")
+			markerLine("//", "END", "update.apply")
 		writeTestFile(t, path, []byte(source), 0o644)
 
 		result, err := Run(Options{Root: root, Apply: true})
@@ -528,9 +527,9 @@ func TestRunFinalizesMarkers(t *testing.T) {
 		root := t.TempDir()
 		path := filepath.Join(root, "main.go")
 		source := "package sample\n\n" +
-			markerLine("//", "BEGIN", "update.self") +
+			markerLine("//", "BEGIN", "update.apply") +
 			"func Apply() {}\n" +
-			markerLine("//", "END", "update.self") + "\n" +
+			markerLine("//", "END", "update.apply") + "\n" +
 			markerLine("//", "BEGIN", "service.https") +
 			"func Dashboard() {}\n" +
 			markerLine("//", "END", "service.https")
@@ -538,7 +537,7 @@ func TestRunFinalizesMarkers(t *testing.T) {
 
 		result, err := Run(Options{
 			Root:  root,
-			Cuts:  mustCuts(t, "update.self"),
+			Cuts:  mustCuts(t, "update.apply"),
 			Apply: true,
 		})
 		if err != nil {
@@ -772,7 +771,7 @@ func TestRunRejectsMalformedMarkers(t *testing.T) {
 			markerLine("//", "BEGIN", "nope"),
 		"mismatched end": "package bad\n\n" +
 			markerLine("//", "BEGIN", "update") +
-			markerLine("//", "END", "update.self"),
+			markerLine("//", "END", "update.apply"),
 		"duplicate nesting": "package bad\n\n" +
 			markerLine("//", "BEGIN", "update") +
 			markerLine("//", "BEGIN", "update") +
@@ -814,12 +813,12 @@ func TestRunSkipsOutputsVCSAndSymlinks(t *testing.T) {
 
 	kept := filepath.Join(root, "main.go")
 	source := "package sample\n\n" +
-		markerLine("//", "BEGIN", "update.self") +
+		markerLine("//", "BEGIN", "update.apply") +
 		"func Apply() {}\n" +
-		markerLine("//", "END", "update.self")
+		markerLine("//", "END", "update.apply")
 	writeTestFile(t, kept, []byte(source), 0o644)
 
-	if _, err := Run(Options{Root: root, Cuts: mustCuts(t, "update.self"), Apply: true}); err != nil {
+	if _, err := Run(Options{Root: root, Cuts: mustCuts(t, "update.apply"), Apply: true}); err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Contains(readTestFile(t, kept), []byte("Apply")) {
@@ -880,4 +879,56 @@ func hasLoneLF(data []byte) bool {
 		}
 	}
 	return false
+}
+
+func TestServiceCutRemovesAutomaticUpdatesAndExplainsWhy(t *testing.T) {
+	cuts, err := ParseCuts([]string{"service"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Set{"service": {}, "service.https": {}, "update.apply.auto": {}}
+	if !reflect.DeepEqual(cuts, want) {
+		t.Fatalf("service cut = %v, want %v", cuts, want)
+	}
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "auto.go"), []byte(markerLine("//", "FILE", "update.apply.auto")+"\npackage sample\n"), 0o644)
+	var output bytes.Buffer
+	result, err := Run(Options{Root: root, Cuts: cuts, Stdout: &output})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.RemovedFiles) != 1 || result.RemovedFiles[0] != "auto.go" {
+		t.Fatalf("automatic source survived: %+v", result)
+	}
+	if !strings.Contains(output.String(), "cut update.apply.auto (requires service)") {
+		t.Fatalf("preview did not explain dependency: %s", output.String())
+	}
+}
+
+func TestVariantsAreDistinctAndDependencyClosed(t *testing.T) {
+	seen := make(map[string]bool)
+	for _, variant := range Variants() {
+		key := strings.Join(variant.Cuts, ",")
+		if seen[key] {
+			t.Fatalf("duplicate retained feature set: %s", variant.Name)
+		}
+		seen[key] = true
+		cuts := make(Set)
+		for _, name := range variant.Cuts {
+			cuts[name] = struct{}{}
+		}
+		for _, name := range Features() {
+			if _, removed := cuts[name]; removed {
+				continue
+			}
+			for _, dependency := range Prerequisites(name) {
+				if _, removed := cuts[dependency]; removed {
+					t.Fatalf("%s retains %s without %s", variant.Name, name, dependency)
+				}
+			}
+		}
+	}
+	if len(seen) != 11 {
+		t.Fatalf("distinct variants = %d, want 11", len(seen))
+	}
 }

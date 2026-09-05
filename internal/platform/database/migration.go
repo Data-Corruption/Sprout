@@ -41,7 +41,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			return fmt.Errorf("failed to create config table: %w", err)
 		}
 
-		// --- BEGIN update.notifications ---
+		// --- BEGIN update ---
 		// A single renewable lease coordinates periodic update checks across
 		// concurrent processes. Manual checks do not use this table.
 		if _, err := tx.ExecContext(ctx, `
@@ -53,7 +53,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		`); err != nil {
 			return fmt.Errorf("failed to create update-check lease table: %w", err)
 		}
-		// --- END update.notifications ---
+		// --- END update ---
 
 		// --- BEGIN service.https ---
 		// UI sessions, keyed by SHA256 of the cookie token. Living in the DB

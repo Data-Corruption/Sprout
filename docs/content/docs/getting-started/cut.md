@@ -47,7 +47,7 @@ the tool or network.
 ```
 
 `--finalize` applies the previewed plan. It removes all ownership
-comments and all template-only tooling. Keeping all six application features is
+comments and all template-only tooling. Keeping all five application features is
 a valid choice and still should be done, both to rename the module and to
 finish the template:
 
@@ -62,9 +62,9 @@ temporary files. It does not remove unrelated empty directories that existed
 before the cut. Retained files are rewritten before the cutter removes itself,
 then `goimports` prunes the imports those removals left unused, `go mod tidy`
 cleans the module files, and the cutter re-walks the tree to confirm no marker
-survived and every planned deletion happened. Every deletion is closed: nothing
-uncomments a fallback implementation, adds a missing import, or applies a
-hidden dependency rule.
+survived and every planned deletion happened. Dependency expansion is explicit in the preview: cutting a prerequisite also
+cuts every dependent feature. The resulting deletions do not uncomment fallback
+implementations or add missing imports.
 
 And that's it, once the markers are gone there is no supported way to
 make another cut.
@@ -77,9 +77,9 @@ means the whole file does. The reserved `template` owner marks cutter and matrix
 machinery that every finalization removes:
 
 ```go
-// --- BEGIN update.self ---
+// --- BEGIN update.apply ---
 // optional code
-// --- END update.self ---
+// --- END update.apply ---
 
 // --- FILE service.https ---
 
@@ -87,8 +87,9 @@ machinery that every finalization removes:
 ```
 
 Equivalent forms exist for shell/YAML and HTML. Code that needs two features
-uses nested fences, so cutting either one removes it. That nesting is why the
-cutter needs no dependency logic.
+uses nested fences, so cutting either one removes it. Whole-feature prerequisites
+live in `internal/cut/features.go`; for example, cutting `service` also removes
+`update.apply.auto`, even though their names are in different branches.
 
 {{% /details %}}
 
@@ -140,7 +141,7 @@ gimme as much detail as possible. OS, arch, build tool versions, etc.
 
 ## Commit the setup
 
-Finalization already removed the cutter, its eighteen-tree upstream matrix, and
+Finalization already removed the cutter, its eleven-tree upstream matrix, and
 the focused installer variants. Commit the finished tree as one reviewable
 change:
 

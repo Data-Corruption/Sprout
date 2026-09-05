@@ -73,9 +73,9 @@ the same way.
 
 ## Other template only stuff
 
-- Optional features are source fences (`// --- BEGIN update.self ---` and
+- Optional features are source fences (`// --- BEGIN update.apply ---` and
   friends), not runtime flags. New optional code goes inside the correct fence
-  or `FILE` owner and must leave every one of the 18 cut variants compiling
+  or `FILE` owner and must leave every one of the 11 cut variants compiling
   and passing: `./scripts/test.sh -cut`.
 - No compatibility shims or deprecation paths. Upstream never publishes
   releases; forks freeze their own invariants at their first release. Change

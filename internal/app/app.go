@@ -148,7 +148,7 @@ func (a *App) Init(ctx context.Context, cmd *cli.Command) (context.Context, erro
 	}
 	a.AddCleanup(func() error {
 		var stateErr error
-		// --- BEGIN update.self ---
+		// --- BEGIN update.apply ---
 		if !migrator {
 			if _, err := config.Update(a.DB, func(cfg *types.Configuration) error {
 				cfg.LastShutdownVersion = a.buildInfo.Version
@@ -157,7 +157,7 @@ func (a *App) Init(ctx context.Context, cmd *cli.Command) (context.Context, erro
 				stateErr = fmt.Errorf("record last shutdown version: %w", err)
 			}
 		}
-		// --- END update.self ---
+		// --- END update.apply ---
 		return errors.Join(stateErr, a.DB.Close())
 	})
 	a.Log.Debug("Database initialized")

@@ -13,9 +13,9 @@
 #
 # Mirrors: run with APP_RELEASE_URL=https://mirror.example.com/ to install from
 # a byte-for-byte mirror of the official release artifacts. All cosign
-# signatures remain valid (they are URL-independent). Mirror installs do not
-# write the release-url file, which disables update checks and self-update by
-# design. See docs/content/docs/getting-started/mirror.md.
+# signatures remain valid (they are URL-independent). The effective source is
+# persisted for later checks and updates, including unattended updates.
+# See docs/content/docs/getting-started/mirror.md.
 #
 # Testing: APP_SKIP_VERIFY=true skips cosign signature verification (the plain
 # sha256 check still runs). Only for local/matrix installer testing against
@@ -708,8 +708,6 @@ uname_m=$(uname -m)
 [ "$(id -u)" -ne 0 ] || fatalf 'Running as root is unsafe. Please run as a non-root user.'
 
 if [ "$MODE" != "uninstall" ]; then
-    OFFICIAL_RELEASE_URL=$(normalize_release_url "$RELEASE_URL") ||
-        fatalf 'Baked release URL is empty or invalid'
     RELEASE_URL=$(normalize_release_url "${APP_RELEASE_URL:-$RELEASE_URL}") ||
         fatalf 'Release URL is empty or invalid'
 
@@ -1117,20 +1115,11 @@ binary_changed=1
 install -Dm755 "$gzip_out" "$APP_BIN" || { rc=$?; fatalf 'Failed to install binary (rc=%d)' "$rc"; }
 
 # --- BEGIN update ---
-# The release-url file enables update checks and self-update. It is only
-# written for installs from the official release URL:
-# mirror installs (APP_RELEASE_URL override) must not self-update, since that
-# would execute the mirror's install.sh.
-# See docs/content/docs/getting-started/mirror.md.
-if [ "$RELEASE_URL" = "$OFFICIAL_RELEASE_URL" ]; then
-    printf 'Writing release source to %s ...\n' "$RELEASE_URL_FILE"
-    release_url_changed=1
-    printf '%s\n' "$RELEASE_URL" > "$RELEASE_URL_FILE" || { rc=$?; fatalf 'Failed to write release URL file (rc=%d)' "$rc"; }
-elif [ -f "$RELEASE_URL_FILE" ]; then
-    printf 'Mirror install: removing release source file (disables in-app updates) ...\n'
-    release_url_changed=1
-    rm -f "$RELEASE_URL_FILE" || { rc=$?; fatalf 'Failed to remove release URL file (rc=%d)' "$rc"; }
-fi
+# The installer owns the effective source; later processes cannot inherit this
+# invocation's environment. Keep this write inside the rollback transaction.
+printf 'Writing release source to %s ...\n' "$RELEASE_URL_FILE"
+release_url_changed=1
+printf '%s\n' "$RELEASE_URL" > "$RELEASE_URL_FILE" || { rc=$?; fatalf 'Failed to write release URL file (rc=%d)' "$rc"; }
 # --- END update ---
 
 # --- BEGIN service ---

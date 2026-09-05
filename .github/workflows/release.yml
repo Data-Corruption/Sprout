@@ -125,35 +125,15 @@ jobs:
       - name: Test Windows variants and parse all installers
         shell: pwsh
         run: |
-          $updates = @(
-            @{ Name = "no-update"; Cuts = @("update") },
-            @{ Name = "update-core"; Cuts = @("update.self", "update.notifications") },
-            @{ Name = "update-self"; Cuts = @("update.notifications") },
-            @{ Name = "update-notifications"; Cuts = @("update.self") },
-            @{ Name = "update-self-notifications"; Cuts = @("update.auto") },
-            @{ Name = "full-update"; Cuts = @() }
-          )
-          $services = @(
-            @{ Name = "no-service"; Cuts = @("service"); Https = $false },
-            @{ Name = "headless-service"; Cuts = @("service.https"); Https = $false },
-            @{ Name = "https-service"; Cuts = @(); Https = $true }
-          )
-          $variants = foreach ($update in $updates) {
-            foreach ($service in $services) {
-              @{
-                Name = $update.Name + "-" + $service.Name
-                Cuts = @($update.Cuts) + @($service.Cuts)
-                Https = $service.Https
-              }
-            }
-          }
+          $variants = go run ./cmd/cutmatrix --list-json | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "Could not enumerate feature variants." }
           $nativeTests = @(
-            "full-update-https-service",
+            "automatic-https-service",
             "no-update-https-service",
-            "update-notifications-https-service",
-            "update-self-notifications-https-service",
-            "full-update-no-service",
-            "full-update-headless-service"
+            "check-https-service",
+            "manual-https-service",
+            "manual-no-service",
+            "automatic-headless-service"
           )
           $archive = Join-Path $env:RUNNER_TEMP "sprout-source.zip"
           git archive --format=zip -o $archive HEAD
@@ -233,7 +213,7 @@ jobs:
         run: scripts/test-lifecycle-e2e.ps1 -InstallerCandidate out/windows-installer-candidate/install.ps1
 
   # --- BEGIN template ---
-  # Validate all 18 supported update/service source variants in isolated
+  # Validate all 11 supported update/service source variants in isolated
   # temporary copies, including surviving installer syntax and frontend states.
   cut-matrix:
     needs: ci-gate

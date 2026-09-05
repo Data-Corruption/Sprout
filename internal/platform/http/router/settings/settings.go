@@ -24,9 +24,9 @@ func Register(a *app.App, r chi.Router) {
 	r.Post("/settings", handleUpdateSettings(a))
 	r.Post("/settings/stop", handleStop(a))
 	r.Post("/settings/restart", handleRestart(a))
-	// --- BEGIN update.self ---
+	// --- BEGIN update.apply ---
 	r.Post("/settings/update", handleUpdate(a))
-	// --- END update.self ---
+	// --- END update.apply ---
 	r.Get("/settings/restart-status", handleRestartStatus(a))
 }
 
@@ -39,9 +39,9 @@ func handleGetSettings(a *app.App) http.HandlerFunc {
 		}
 
 		data := a.UI.PageData("Settings", a.BuildInfo().Version)
-		// --- BEGIN update.notifications ---
-		data["UpdateAvailable"] = cfg.UpdateAvailable && !a.DevMode
-		// --- END update.notifications ---
+		// --- BEGIN update ---
+		data["UpdateAvailable"] = cfg.UpdateNotifications && a.UpdateAvailable(cfg)
+		// --- END update ---
 		data["LogLevel"] = cfg.LogLevel
 		data["UIBind"] = cfg.UIBind
 		data["ProxyBind"] = cfg.ProxyBind
@@ -160,12 +160,9 @@ func handleRestartWith(a *app.App, restart func()) http.HandlerFunc {
 	}
 }
 
-// --- BEGIN update.self ---
+// --- BEGIN update.apply ---
 func handleUpdate(a *app.App) http.HandlerFunc {
 	checkForUpdate := a.CheckForUpdate
-	// --- BEGIN update.notifications ---
-	checkForUpdate = a.CheckForUpdateAndNotify
-	// --- END update.notifications ---
 	return handleUpdateWith(a, checkForUpdate, func() error {
 		_, err := a.StartMaintenance(a.Context, maintenance.ActionUpdate)
 		return err
@@ -246,7 +243,7 @@ func handleUpdateWith(
 	}
 }
 
-// --- END update.self ---
+// --- END update.apply ---
 
 func handleRestartStatus(a *app.App) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -264,12 +261,12 @@ func handleRestartStatus(a *app.App) http.HandlerFunc {
 		resp := map[string]bool{"restarted": restarted}
 		a.Log.Debugf("Restart status check: StartCounter=%d, Restarted=%t", cfg.StartCounter, restarted)
 
-		// --- BEGIN update.self ---
+		// --- BEGIN update.apply ---
 		updated := cfg.LastShutdownVersion != "" && cfg.LastShutdownVersion != a.BuildInfo().Version
 		resp["updated"] = updated
 		a.Log.Debugf("Restart status check: LastShutdownVersion=%q, CurrentVersion=%q, Updated=%t",
 			cfg.LastShutdownVersion, a.BuildInfo().Version, updated)
-		// --- END update.self ---
+		// --- END update.apply ---
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {

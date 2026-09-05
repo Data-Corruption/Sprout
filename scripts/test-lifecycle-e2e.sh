@@ -201,10 +201,9 @@ if [[ -z "$RELEASE_DIR" ]]; then
       sha256sum "$BIN_ASSET.gz" version > checksums.txt
     )
     (
-      # The same controller is exercised later through the detached Go path
-      # over this in-container HTTP origin. Earlier direct recovery calls use
-      # APP_RELEASE_URL=file:// as an intentional mirror override.
-      RELEASE_URL="http://127.0.0.1:18080/fault/"
+      # Every fixture invocation must override this unreachable official source.
+      # The detached update must preserve the mirror selected by installation.
+      RELEASE_URL="https://official.invalid/"
       CERT_IDENTITY="test-identity"
       OIDC_ISSUER="test-issuer"
       COSIGN_VERSION="v0.0.0"
@@ -780,8 +779,13 @@ if [ "\${TEST_DEEP_LIFECYCLE:-0}" = "1" ] && [ "\${TEST_FAULT:-0}" = "1" ]; then
   current_update_version=\$(sed -n 's/.*"version":"\([^"]*\)".*/\1/p' "\$state_file")
   test "\$current_update_version" != "\$detached_update_version"
 
-  detached_release_url=http://127.0.0.1:18080/fault/
-  python3 -m http.server 18080 --bind 127.0.0.1 --directory /release >/tmp/$APP_NAME-release-http.log 2>&1 &
+  mirror_dir=/tmp/$APP_NAME-mirror
+  mkdir -p "\$mirror_dir"
+  cp -a /release/. "\$mirror_dir/"
+  cp -a /release/fault/releases/. "\$mirror_dir/releases/"
+  cp /release/fault/install.sh /release/fault/install.sh.cosign.bundle "\$mirror_dir/"
+  detached_release_url=http://127.0.0.1:18080/
+  python3 -m http.server 18080 --bind 127.0.0.1 --directory "\$mirror_dir" >/tmp/$APP_NAME-release-http.log 2>&1 &
   release_http_pid=\$!
   release_http_tries=0
   until curl --fail --silent "\${detached_release_url}version" >/dev/null; do
@@ -798,7 +802,12 @@ if [ "\${TEST_DEEP_LIFECYCLE:-0}" = "1" ] && [ "\${TEST_FAULT:-0}" = "1" ]; then
   # admits the unsigned remote installer fixture in the launcher's independent
   # verification step.
   run_tester 'printf "#!/bin/sh\nexit 0\n" >"\$HOME/.local/bin/cosign" && chmod 700 "\$HOME/.local/bin/cosign"'
-  run_tester "printf '%s\\n' '\$detached_release_url' >'\$maintenance_dir/release-url'"
+  # Install the currently running version from the mirror, then promote the
+  # complete newer prefix by replacing the pointer last. No metadata is injected.
+  run_tester "APP_RELEASE_URL='\$detached_release_url' APP_SKIP_VERIFY=true sh '\$mirror_dir/install.sh'"
+  grep -qx "\$detached_release_url" "\$maintenance_dir/release-url"
+  printf '%s\n' "\$detached_update_version" >"\$mirror_dir/version.next"
+  mv "\$mirror_dir/version.next" "\$mirror_dir/version"
   detached_update_output=\$(run_tester 'APP_SKIP_VERIFY=true "\$HOME/.local/bin/$APP_NAME" update --yes' 2>&1)
   printf '%s\n' "\$detached_update_output"
   printf '%s\n' "\$detached_update_output" | grep -q 'Update accepted'

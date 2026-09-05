@@ -18,17 +18,23 @@ type Configuration struct {
 	ProxyBind string `json:"proxyBind"`
 	// --- END service.https ---
 
-	// --- BEGIN update.notifications ---
-	UpdateNotifications bool      `json:"updateNotifications"`
-	LastUpdateCheck     time.Time `json:"lastUpdateCheck"`
-	UpdateAvailable     bool      `json:"updateAvailable"`
-	// --- END update.notifications ---
+	// --- BEGIN update ---
+	UpdateNotifications    bool      `json:"updateNotifications"`
+	LastUpdateCheck        time.Time `json:"lastUpdateCheck"`
+	BackgroundUpdateChecks bool      `json:"backgroundUpdateChecks"`
+	UpdateCheckSource      string    `json:"updateCheckSource"`
+	LatestUpdateVersion    string    `json:"latestUpdateVersion"`
+	// --- END update ---
 
-	// --- BEGIN update.self ---
+	// --- BEGIN update.apply.auto ---
+	AutomaticUpdates bool `json:"automaticUpdates"`
+	// --- END update.apply.auto ---
+
+	// --- BEGIN update.apply ---
 	// LastShutdownVersion is compared with the running version after a restart
 	// to infer whether an update occurred.
 	LastShutdownVersion string `json:"lastShutdownVersion"`
-	// --- END update.self ---
+	// --- END update.apply ---
 
 	// --- BEGIN service.https ---
 	// Dashboard auth (sessions live in the sessions table, not in config).
@@ -69,9 +75,10 @@ func DefaultConfig(buildInfo build.BuildInfo) Configuration {
 		// --- BEGIN service.https ---
 		UIBind: uiBind,
 		// --- END service.https ---
-		// --- BEGIN update.notifications ---
-		UpdateNotifications: true,
-		LastUpdateCheck:     time.Time{},
-		// --- END update.notifications ---
+		// --- BEGIN update ---
+		UpdateNotifications:    true,
+		BackgroundUpdateChecks: true,
+		LastUpdateCheck:        time.Time{},
+		// --- END update ---
 	}
 }

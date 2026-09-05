@@ -36,14 +36,6 @@ func (a *App) StartMaintenance(ctx context.Context, action maintenance.Action) (
 		return "", ErrDevBuild
 	}
 
-	// --- BEGIN update.self ---
-	if action == maintenance.ActionUpdate {
-		if err := a.setUpdateAvailable(false); err != nil {
-			return "", err
-		}
-	}
-	// --- END update.self ---
-
 	admission, err := maintenance.StartMaintenance(ctx, maintenance.LaunchOptions{
 		Layout:       a.Layout,
 		Name:         a.buildInfo.Name,
@@ -60,13 +52,6 @@ func (a *App) StartMaintenance(ctx context.Context, action maintenance.Action) (
 		a.maintenanceAdmitted = time.Now()
 	}
 	if err != nil {
-		// --- BEGIN update.self ---
-		if action == maintenance.ActionUpdate && admission.JobDir == "" {
-			if restoreErr := a.setUpdateAvailable(true); restoreErr != nil {
-				return "", fmt.Errorf("%w; restore available-update flag: %v", err, restoreErr)
-			}
-		}
-		// --- END update.self ---
 		return "", err
 	}
 	return admission.LogPath, nil
@@ -97,47 +82,10 @@ func (a *App) refreshMaintenanceLocked() (bool, error) {
 		}
 	}
 
-	// --- BEGIN update.self ---
-	if a.maintenanceAction == maintenance.ActionUpdate {
-		state, err := maintenance.ReadState(a.Layout)
-		if err != nil {
-			return false, fmt.Errorf("read lifecycle state after maintenance job: %w", err)
-		}
-		if state.Phase == maintenance.PhaseReady && state.Version == a.buildInfo.Version {
-			if err := a.setUpdateAvailable(true); err != nil {
-				return false, fmt.Errorf("restore update after maintenance job: %w", err)
-			}
-		}
-	}
-	// --- END update.self ---
-
 	a.maintenanceStarted = false
 	a.maintenanceAction = ""
 	a.maintenanceJob = ""
 	a.maintenanceLog = ""
 	a.maintenanceAdmitted = time.Time{}
 	return false, nil
-}
-
-// waitForMaintenance waits until the admitted controller finishes or the
-// application is cancelled by that controller's cooperative drain.
-func (a *App) waitForMaintenance(ctx context.Context) error {
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		a.maintenanceMu.Lock()
-		running, err := a.refreshMaintenanceLocked()
-		a.maintenanceMu.Unlock()
-		if err != nil {
-			return err
-		}
-		if !running {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		}
-	}
 }

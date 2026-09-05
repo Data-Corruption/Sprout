@@ -6,7 +6,7 @@
 #   ./scripts/test.sh                              # race-enabled Go tests
 #   ./scripts/test.sh -lint                        # shellcheck over the shell scripts
 # --- BEGIN template ---
-#   ./scripts/test.sh -cut                         # all 18 source shapes
+#   ./scripts/test.sh -cut                         # all 11 source shapes
 # --- END template ---
 #   ./scripts/test.sh -release                     # release state machine
 #   ./scripts/test.sh -e2e [lifecycle options]     # Linux lifecycle E2E

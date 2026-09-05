@@ -1,10 +1,13 @@
-// --- FILE update.notifications ---
+// --- FILE update ---
 
 package app
 
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -17,10 +20,12 @@ import (
 	"sprout/internal/platform/database"
 	"sprout/internal/platform/database/config"
 	"sprout/internal/platform/database/updatelease"
+	"sprout/internal/platform/release"
+	"sprout/internal/types"
 	"sprout/pkg/xlog"
 )
 
-func TestCheckForUpdateAndNotifyPersistsResult(t *testing.T) {
+func TestCheckForUpdatePersistsResult(t *testing.T) {
 	tmp := t.TempDir()
 	if err := os.Chmod(tmp, 0o700); err != nil {
 		t.Fatal(err)
@@ -53,7 +58,7 @@ func TestCheckForUpdateAndNotifyPersistsResult(t *testing.T) {
 		ReleaseSource: &MockReleaseSource{LatestVersion: "v1.1.0"},
 		buildInfo:     buildInfo,
 	}
-	available, err := a.CheckForUpdateAndNotify(context.Background())
+	available, err := a.CheckForUpdate(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +70,7 @@ func TestCheckForUpdateAndNotifyPersistsResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.UpdateAvailable || cfg.LastUpdateCheck.IsZero() {
+	if !a.UpdateAvailable(cfg) || cfg.LastUpdateCheck.IsZero() {
 		t.Fatalf("notification state not persisted: %+v", cfg)
 	}
 }
@@ -74,7 +79,7 @@ type updateTestReleaseSource interface {
 	GetLatestVersion(context.Context, string) (string, error)
 }
 
-func newUpdateNotificationTestApp(t *testing.T, source updateTestReleaseSource) *App {
+func newUpdateTestApp(t *testing.T, source updateTestReleaseSource) *App {
 	t.Helper()
 	tmp := t.TempDir()
 	if err := os.Chmod(tmp, 0o700); err != nil {
@@ -116,7 +121,7 @@ func newUpdateNotificationTestApp(t *testing.T, source updateTestReleaseSource) 
 }
 
 func TestManualUpdateCheckIgnoresPeriodicLease(t *testing.T) {
-	a := newUpdateNotificationTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
+	a := newUpdateTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
 	now := time.Now()
 	if _, claimed, err := updatelease.Claim(
 		context.Background(),
@@ -129,7 +134,7 @@ func TestManualUpdateCheckIgnoresPeriodicLease(t *testing.T) {
 		t.Fatal("failed to establish periodic lease")
 	}
 
-	available, err := a.CheckForUpdateAndNotify(context.Background())
+	available, err := a.CheckForUpdate(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +154,7 @@ func TestManualUpdateCheckIgnoresPeriodicLease(t *testing.T) {
 }
 
 func TestFailedPeriodicUpdateCheckLeavesLease(t *testing.T) {
-	a := newUpdateNotificationTestApp(t, &MockReleaseSource{Error: context.DeadlineExceeded})
+	a := newUpdateTestApp(t, &MockReleaseSource{Error: context.DeadlineExceeded})
 	if _, _, err := a.checkForPeriodicUpdate(context.Background()); err == nil {
 		t.Fatal("periodic check unexpectedly succeeded")
 	}
@@ -165,8 +170,9 @@ func TestFailedPeriodicUpdateCheckLeavesLease(t *testing.T) {
 	}
 }
 
+// --- BEGIN service ---
 func TestServiceUpdateCheckerKeepsRunningWithInvalidMetadata(t *testing.T) {
-	a := newUpdateNotificationTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
+	a := newUpdateTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
 	if err := os.WriteFile(a.Layout.ReleaseURL, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -189,10 +195,12 @@ func TestServiceUpdateCheckerKeepsRunningWithInvalidMetadata(t *testing.T) {
 	}
 }
 
-// --- BEGIN update.self ---
-// --- BEGIN update.auto ---
-func TestFinishedUpdateJobRestoresAvailabilityForRetry(t *testing.T) {
-	a := newUpdateNotificationTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
+// --- END service ---
+
+// --- BEGIN update.apply ---
+// --- BEGIN update.apply.auto ---
+func TestFinishedUpdateJobPreservesReleaseObservation(t *testing.T) {
+	a := newUpdateTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
 	if err := maintenance.WriteState(a.Layout, maintenance.State{
 		Phase:             maintenance.PhaseReady,
 		Version:           a.buildInfo.Version,
@@ -201,7 +209,7 @@ func TestFinishedUpdateJobRestoresAvailabilityForRetry(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.setUpdateAvailable(false); err != nil {
+	if _, err := a.CheckForUpdate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -220,7 +228,7 @@ func TestFinishedUpdateJobRestoresAvailabilityForRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.UpdateAvailable {
+	if !a.UpdateAvailable(cfg) {
 		t.Fatal("failed update was not made eligible for retry")
 	}
 }
@@ -230,7 +238,7 @@ func TestFinishedUpdateJobRestoresAvailabilityForRetry(t *testing.T) {
 // published, the admitting process reaps the directory itself and treats the
 // job like any other pre-commit failure.
 func TestOrphanedUpdateJobIsReapedAndRetried(t *testing.T) {
-	a := newUpdateNotificationTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
+	a := newUpdateTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
 	if err := maintenance.WriteState(a.Layout, maintenance.State{
 		Phase:             maintenance.PhaseReady,
 		Version:           a.buildInfo.Version,
@@ -239,7 +247,7 @@ func TestOrphanedUpdateJobIsReapedAndRetried(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.setUpdateAvailable(false); err != nil {
+	if _, err := a.CheckForUpdate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	jobDir := filepath.Join(a.Layout.Jobs, "orphaned-job")
@@ -275,16 +283,14 @@ func TestOrphanedUpdateJobIsReapedAndRetried(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.UpdateAvailable {
+	if !a.UpdateAvailable(cfg) {
 		t.Fatal("orphaned update was not made eligible for retry")
 	}
 }
 
-// --- END update.auto ---
-// --- END update.self ---
+// --- END update.apply.auto ---
+// --- END update.apply ---
 
-// --- BEGIN update.self ---
-// --- BEGIN update.auto ---
 type blockingReleaseSource struct {
 	started chan struct{}
 	release chan struct{}
@@ -296,7 +302,7 @@ func TestCloseCancelsAndJoinsOneShotUpdateCheck(t *testing.T) {
 		started: make(chan struct{}, 1),
 		release: make(chan struct{}),
 	}
-	a := newUpdateNotificationTestApp(t, source)
+	a := newUpdateTestApp(t, source)
 	if err := a.StartUpdateCheckIfDue(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -332,12 +338,14 @@ func (s *blockingReleaseSource) GetLatestVersion(ctx context.Context, _ string) 
 	}
 }
 
+// --- BEGIN update.apply ---
+// --- BEGIN update.apply.auto ---
 func TestContendingPeriodicChecksLaunchOneAutomaticUpdate(t *testing.T) {
 	source := &blockingReleaseSource{
 		started: make(chan struct{}, 2),
 		release: make(chan struct{}),
 	}
-	first := newUpdateNotificationTestApp(t, source)
+	first := newUpdateTestApp(t, source)
 	second := &App{
 		DB:            first.DB,
 		Log:           first.Log,
@@ -407,7 +415,7 @@ func TestContendingPeriodicChecksLaunchOneAutomaticUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.UpdateAvailable || cfg.LastUpdateCheck.IsZero() {
+	if !first.UpdateAvailable(cfg) || cfg.LastUpdateCheck.IsZero() {
 		t.Fatalf("periodic result not persisted: %+v", cfg)
 	}
 }
@@ -450,5 +458,105 @@ func TestMaybeStartAutomaticUpdate(t *testing.T) {
 	})
 }
 
-// --- END update.auto ---
-// --- END update.self ---
+// --- END update.apply.auto ---
+// --- END update.apply ---
+
+func TestDiscoveryFollowsMirrorAndInvalidatesOldSource(t *testing.T) {
+	var calls atomic.Int32
+	latest := "v1.1.0"
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.Path != "/approved/version" {
+			t.Errorf("unexpected mirror request: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprintln(w, latest)
+	}))
+	defer mirror.Close()
+	a := newUpdateTestApp(t, &release.GenericReleaseSource{})
+	source := mirror.URL + "/approved/"
+	if err := os.WriteFile(a.Layout.ReleaseURL, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	available, completed, err := a.checkForPeriodicUpdate(context.Background())
+	if err != nil || !available || !completed {
+		t.Fatalf("mirror check: available=%t completed=%t err=%v", available, completed, err)
+	}
+	cfg, err := config.View(a.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.UpdateCheckSource != source || cfg.LatestUpdateVersion != latest || !a.UpdateAvailable(cfg) {
+		t.Fatalf("wrong mirror observation: %+v", cfg)
+	}
+	if a.periodicUpdateCheckDue(cfg, time.Now()) {
+		t.Fatal("fresh mirror observation already due")
+	}
+	a.buildInfo.Version = latest
+	if a.UpdateAvailable(cfg) {
+		t.Fatal("successful upgrade left a stale notice")
+	}
+	a.buildInfo.Version = "v1.0.0"
+	if err := os.WriteFile(a.Layout.ReleaseURL, []byte(mirror.URL+"/other/"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if a.UpdateAvailable(cfg) || !a.periodicUpdateCheckDue(cfg, time.Now()) {
+		t.Fatal("source change reused the previous mirror observation")
+	}
+	if err := os.Remove(a.Layout.ReleaseURL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.CheckForUpdate(context.Background()); !errors.Is(err, ErrUpdatesDisabled) {
+		t.Fatalf("missing source: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("missing source made a network request; calls=%d", calls.Load())
+	}
+}
+
+func TestHiddenNoticesDoNotDisableBackgroundChecks(t *testing.T) {
+	a := newUpdateTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
+	if _, err := config.Update(a.DB, func(cfg *types.Configuration) error { cfg.UpdateNotifications = false; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	available, completed, err := a.checkForPeriodicUpdate(context.Background())
+	if err != nil || !available || !completed {
+		t.Fatalf("hidden notices disabled checking: %t %t %v", available, completed, err)
+	}
+	if _, err := config.Update(a.DB, func(cfg *types.Configuration) error {
+		cfg.BackgroundUpdateChecks = false
+		cfg.LastUpdateCheck = time.Time{}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, completed, err = a.checkForPeriodicUpdate(context.Background())
+	if err != nil || completed {
+		t.Fatalf("disabled background check ran: %t %v", completed, err)
+	}
+	available, err = a.CheckForUpdate(context.Background())
+	if err != nil || !available {
+		t.Fatalf("background preference blocked manual check: %t %v", available, err)
+	}
+}
+
+// --- BEGIN update.apply.auto ---
+func TestAutomaticUpdatesRequireOptInAndBackgroundChecks(t *testing.T) {
+	a := newUpdateTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
+	if a.runAutomaticUpdate(context.Background(), true) {
+		t.Fatal("automatic update ran without opt-in")
+	}
+	if _, err := config.Update(a.DB, func(cfg *types.Configuration) error {
+		cfg.AutomaticUpdates = true
+		cfg.BackgroundUpdateChecks = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if a.runAutomaticUpdate(context.Background(), true) {
+		t.Fatal("automatic update ran with background checks disabled")
+	}
+}
+
+// --- END update.apply.auto ---

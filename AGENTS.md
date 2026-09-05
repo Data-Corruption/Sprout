@@ -38,7 +38,7 @@ does not apply.
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
 | `scripts/install.sh`, `scripts/install.ps1` | The installers; templated by `build.sh` |
 | `scripts/test.sh`, `scripts/test-*` | Test entrypoints and harnesses |
-| `internal/cut`, `cmd/cut`, `cmd/cutmatrix` | Upstream only: the fence cutter and the 18-variant matrix; deleted by finalize |
+| `internal/cut`, `cmd/cut`, `cmd/cutmatrix` | Upstream only: the fence cutter and the 11-variant matrix; deleted by finalize |
 | `docs/content/docs/` | Reader-facing documentation (Hugo site) |
 | `docs/MAINTENANCE.md` | The install/update/uninstall protocol, precisely |
 
@@ -172,19 +172,21 @@ Optional features are source code fenced with ownership markers, not runtime
 flags:
 
 ```text
-// --- BEGIN update.self ---   ...   // --- END update.self ---
+// --- BEGIN update.apply ---   ...   // --- END update.apply ---
 // --- FILE service.https ---        (whole file)
 // --- FILE template ---             (deleted by every finalize)
 ```
 
 Four comment styles are recognized (`//`, `#`, `<!-- -->`, `/* */`). Owners:
-`update`, `update.self`, `update.notifications`, `update.auto`, `service`,
+`update`, `update.apply`, `update.apply.auto`, `service`,
 `service.https`, plus reserved `template`. Nested fences express "needs both";
-cutting a parent cuts its dotted children. Markdown is deliberately not a
-marker candidate.
+whole-feature prerequisites live in `internal/cut/features.go`. Cutting a
+prerequisite removes its dependents transitively (`update.apply.auto` also
+requires `service`). Both CI matrices use that graph. Markdown is deliberately
+not a marker candidate.
 
 - New optional code must live inside the correct fence or `FILE` owner, and
-  must leave every one of the 18 cut variants compiling and passing.
+  must leave every one of the 11 cut variants compiling and passing.
   `./scripts/test.sh -cut` runs them all.
 - Do not add compatibility shims, legacy decoding, or deprecation paths.
   Upstream never publishes releases; forks freeze their own invariants at

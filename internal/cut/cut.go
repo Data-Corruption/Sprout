@@ -81,6 +81,23 @@ func Run(options Options) (Result, error) {
 		output = io.Discard
 	}
 
+	for _, name := range Features() {
+		if _, removed := cuts[name]; !removed {
+			continue
+		}
+		var reasons []string
+		for _, prerequisite := range Prerequisites(name) {
+			if _, removed := cuts[prerequisite]; removed {
+				reasons = append(reasons, prerequisite)
+			}
+		}
+		if len(reasons) != 0 {
+			fmt.Fprintf(output, "cut %s (requires %s)\n", name, strings.Join(reasons, ", "))
+		} else {
+			fmt.Fprintf(output, "cut %s\n", name)
+		}
+	}
+
 	var plans []filePlan
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {

@@ -221,18 +221,35 @@ the unlink. Other processes, and every process after a restart, ignore
 orphaned directories; fail-closed behavior comes from `state.json`, never from
 the job directory.
 
+## Release source
+
+When update support is retained, each installer persists its effective release
+URL in `maintenance/release-url`, including `APP_RELEASE_URL` mirror overrides.
+The write participates in the installation transaction and pre-migration rollback.
+Checks and detached jobs read this file; detached jobs also pass the source to
+the installer so an update stays on the same mirror. Missing or invalid metadata
+prevents updates without falling back to a public host. The original baked
+signing identity is enforced independently of the download location.
+
 ## Update checks
 
 Application initialization does not start an automatic updater. Root command
 setup may start one cancellable, check-if-due operation. Periodic one-shot and
 service checks share the database lease; manual checks intentionally bypass it.
-The one-shot may persist update availability but never launches maintenance. It
+The one-shot may persist the checked source, latest version, and timestamp but
+never launches maintenance. Availability is derived against the running version
+and current source; admission does not clear it and failure does not restore it. It
 is cancelled and joined before the database closes.
 
 Only the service's blocking update-check component may admit an automatic
 update. It first consumes fresh availability persisted by another process, then
 runs the periodic loop. All in-process update checks share one mutex; the
-database update lease remains the cross-process guard.
+database update lease remains the cross-process guard. Background checking and
+notice display have separate preferences, both enabled by default. Automatic
+application requires retained `update.apply.auto` code, a running service, and an
+explicitly enabled `AutomaticUpdates` preference (disabled by default). Disabling
+background checking also prevents automatic application. Preferences are reread
+within one minute; already admitted jobs continue independently.
 
 ## Uninstall and recovery
 

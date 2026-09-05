@@ -329,17 +329,8 @@ try {
     if ($detachedRendered -ceq $rendered) {
         throw "Could not force verification skip in the detached-update fixture."
     }
-    $defaultReleaseMatch = [regex]::Match(
-        $detachedRendered,
-        '(?m)^\$DefaultReleaseUrl = "[^"]*"[ \t]*\r?$'
-    )
-    if (-not $defaultReleaseMatch.Success) {
-        throw "Could not set the detached controller's local release source."
-    }
-    $detachedRendered = $detachedRendered.Replace(
-        $defaultReleaseMatch.Value,
-        ('$DefaultReleaseUrl = "' + $DetachedReleaseUrl + '"')
-    )
+    # Keep the official default different from the mirror. The detached job
+    # must pass the source persisted by an actual installer invocation.
     $strictModeNeedle = 'Set-StrictMode -Version Latest'
     $detachedRendered = $detachedRendered.Replace(
         $strictModeNeedle,
@@ -360,8 +351,24 @@ try {
     $serverLog = Join-Path $Temp "server.log"
     $serverOut = Join-Path $Temp "server.out"
     $quotedReleaseRoot = '"' + $ReleaseRoot + '"'
+    # Application discovery now uses the same mirror as installers. Record
+    # User-Agent so the pinning assertion counts installer reads independently.
+    $ServerScript = Join-Path $Temp "release-server.py"
+    [IO.File]::WriteAllText($ServerScript, @'
+import functools
+import http.server
+import sys
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        super().log_message(fmt + " user-agent=%s", *args, self.headers.get("User-Agent", ""))
+
+handler = functools.partial(Handler, directory=sys.argv[2])
+http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), handler).serve_forever()
+'@)
+    $quotedServerScript = '"' + $ServerScript + '"'
     $Server = Start-Process -FilePath "python" -ArgumentList @(
-        "-m", "http.server", "$port", "--bind", "127.0.0.1", "--directory", $quotedReleaseRoot
+        "-u", $quotedServerScript, "$port", $quotedReleaseRoot
     ) -RedirectStandardOutput $serverOut -RedirectStandardError $serverLog -PassThru -WindowStyle Hidden
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     do {
@@ -376,7 +383,8 @@ try {
         throw "Local fixture server did not start."
     }
 
-    $baselineRootReads = @(Select-String -LiteralPath $serverLog -SimpleMatch '"GET /version HTTP/' -ErrorAction SilentlyContinue).Count
+    $baselineRootReads = @(Select-String -LiteralPath $serverLog -SimpleMatch '"GET /version HTTP/' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Line -notlike "*$AppName/*" }).Count
     $env:APP_SKIP_VERIFY = "true"
     $env:APP_RELEASE_URL = $ReleaseUrl
 
@@ -524,7 +532,21 @@ try {
     New-Item -ItemType Directory -Path $ManagedCosignDir -Force | Out-Null
     Copy-Item -LiteralPath $CosignStubBuildPath -Destination $ManagedCosignBin -Force
 
-    [IO.File]::WriteAllText($ReleaseUrlFile, $DetachedReleaseUrl + "`n")
+    # Install the current version from the mirror before promoting its newer
+    # release. This tests source persistence without injecting metadata by hand.
+    Copy-Item -LiteralPath $FaultVersionRoot -Destination (Join-Path $NewerReleaseRoot "releases") -Recurse
+    [IO.File]::WriteAllText((Join-Path $NewerReleaseRoot "version"), $FaultVersion + "`n")
+    $env:APP_RELEASE_URL = $DetachedReleaseUrl
+    $mirrorInstall = Invoke-Installer -Path $NewerInstallerPath
+    if ($mirrorInstall.ExitCode -ne 0) {
+        throw "Mirror installation failed: $($mirrorInstall.Detail)"
+    }
+    if ([IO.File]::ReadAllText($ReleaseUrlFile).Trim() -cne $DetachedReleaseUrl) {
+        throw "Mirror installation did not persist its effective source."
+    }
+    $nextPointer = Join-Path $NewerReleaseRoot "version.next"
+    [IO.File]::WriteAllText($nextPointer, $NewerVersion + "`n")
+    [IO.File]::Replace($nextPointer, (Join-Path $NewerReleaseRoot "version"), $null)
     Remove-Item Env:APP_MAINTENANCE_EXPECT_EPOCH -ErrorAction SilentlyContinue
     Remove-Item Env:APP_MAINTENANCE_EXPECT_VERSION -ErrorAction SilentlyContinue
     $detachedOut = Join-Path $Temp "detached-update.out"
@@ -642,7 +664,8 @@ try {
     }
 
     Start-Sleep -Milliseconds 250
-    $rootReads = @(Select-String -LiteralPath $serverLog -SimpleMatch '"GET /version HTTP/' -ErrorAction SilentlyContinue).Count - $baselineRootReads
+    $rootReads = @(Select-String -LiteralPath $serverLog -SimpleMatch '"GET /version HTTP/' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Line -notlike "*$AppName/*" }).Count - $baselineRootReads
     $expectedRootReads = 1
     if ($ServiceEnabled -and $ServiceDefaultPort -gt 0) {
         $expectedRootReads++
@@ -770,7 +793,7 @@ try {
     $serverOut2 = Join-Path $Temp "server-2.out"
     $serverLog2 = Join-Path $Temp "server-2.log"
     $Server = Start-Process -FilePath "python" -ArgumentList @(
-        "-m", "http.server", "$reinstallPort", "--bind", "127.0.0.1", "--directory", $quotedReleaseRoot
+        "-u", $quotedServerScript, "$reinstallPort", $quotedReleaseRoot
     ) -RedirectStandardOutput $serverOut2 -RedirectStandardError $serverLog2 -PassThru -WindowStyle Hidden
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     do {

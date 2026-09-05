@@ -51,8 +51,9 @@ secrets listed below.
 {{% /details %}}
 
 Point `RELEASE_URL` at that domain in `scripts/build.sh`. It must end in `/`.
-It gets baked into the installers and, for official installs, persisted on the
-user's machine as the approved source for later update checks.
+It gets baked into the installers as their default. Each installation persists
+its effective source for later checks and updates, including an `APP_RELEASE_URL`
+override pointing at an approved mirror.
 
 In the GitHub repository, add these Actions secrets:
 
@@ -275,7 +276,7 @@ explains what these tests actually cover, and what the four CI jobs run.
 Once a second release exists, test it. If you kept the default update features
 run `<APP> update` and decline the confirmation (the app will then know a new
 update is available). Open / refresh the dashboard and a notice should
-appear. If you kept the `update.self` you can click **Update** and the app
+appear. If you kept the `update.apply` you can click **Update** and the app
 should update / page refresh in a few seconds. Before it runs anything, the
 application re-downloads `install.sh` and cosign-verifies it against the
 identity baked in at build time, so a tampered or mirror-modified script aborts

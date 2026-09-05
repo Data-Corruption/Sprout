@@ -36,9 +36,11 @@ Copy unmodified. Upload the immutable prefix first and replace the mirror's root
 install during your sync still finishes against a complete release:
 
 ```sh
+set -eu
 BASE=https://cd.example.com/   # the official release URL
 version=$(curl -fsSL "${BASE}version")
-case "$version" in v[0-9]*.[0-9]*.[0-9]*) ;; *) exit 1 ;; esac
+# Validate the version before using it as a path; this recipe uses stable releases.
+printf '%s\n' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || exit 1
 
 mkdir -p "releases/$version"
 for f in version linux-amd64.gz linux-arm64.gz windows-amd64.exe.gz \
@@ -50,21 +52,48 @@ for f in install.sh install.sh.cosign.bundle install.ps1 install.ps1.cosign.bund
 done
 printf '%s\n' "$version" > version
 
-# upload releases/$version, then the root installer pairs, then root version
+# This is a local staging directory, not the live mirror.
+# Verify, test, and approve before publishing; publish the root version last.
 ```
 
-Scan, test, and approve however your organization requires before publishing.
-Then do not edit anything you publish. Editing any file breaks its signature by
-design, the artifacts chain to the official CI identity, and that chain is the
-entire point of mirroring rather than rebuilding.
+This example downloads a stable release into a local staging directory. For
+prerelease versions, validate the full semantic version before using it as a
+path. A download is not an approval or a signature check. Before publishing:
 
-Retention is your call and it is a different call than the release host's. The
-official host keeps the two newest promoted versions and will not remove an
-older third until it is at least 24 hours old, because its only job is to let
-in-flight installs finish. A mirror can keep everything forever, and often
-should: it is the record of which versions your users were approved to run.
-Whatever you do, keep the previously promoted prefix around while installs
-pinned to it may still be running.
+1. Verify `checksums.txt.cosign.bundle` against the original workflow identity,
+   then match every release artifact against the signed checksums. Verify both
+   root installer bundles against that same identity. Root installers can change
+   during a download: if a pair does not verify, fetch the pair again and stop if
+   it still fails.
+2. Scan and test the staged release and installers using your approval process.
+3. Upload the complete immutable `releases/<version>/` prefix. Verify the hosted
+   copy before making it discoverable. Never replace a version with different bytes.
+4. Publish the verified root installer pairs. Publish each bundle before its
+   installer, which is the pair's commit point, as described in
+   [Publish a release]({{% relref "docs/getting-started/release" %}}). A reader
+   encountering the temporary mismatch fails verification safely; it can retry.
+   If publication stops between the two objects, finish publishing that exact
+   verified pair before promoting the release. Leave unchanged pairs alone.
+5. Replace the mirror's root `version` pointer **last**. Serve it without stale
+   caching; bypass edge caching or preserve `Cache-Control: no-store` end to end.
+
+Installers are executable maintenance controllers, so approval covers their bytes
+as well as the release artifacts. They are independent of application versions:
+replacing a root installer makes it available to users even before the version
+pointer moves. Keep the old verified pairs until publication has completed.
+
+### Retain releases that installations may still be using
+
+Always keep the current and previous promoted releases. Retire an older prefix
+only after at least 24 hours have passed since it stopped being advertised by the
+mirror's root pointer. Record that time when advancing the pointer; the upload
+time is not a substitute. A version could have been current for months.
+
+This gives installations already pinned to an old prefix time to finish. Extend
+the grace period if your environment allows installation runs to remain paused
+longer. Keeping all approved releases indefinitely is also fine and can provide
+an approval history. Mirror retention is independent of upstream retention;
+copy everything you need before upstream removes it.
 
 ## Install from one
 
@@ -103,29 +132,38 @@ mirror's root `version` once, pins it, downloads `checksums.txt` and its bundle,
 verifies them with cosign, and SHA-256-matches both the prefix version file and
 the binary it selected.
 
-## Mirror installs never auto-update
+## Updates stay on the mirror
 
-This is deliberate, and overrides if you left `update.auto` code in the source.
+When update support is retained, the installer writes the effective source URL
+into `maintenance/release-url`, including a mirror supplied through
+`APP_RELEASE_URL`. This is installer-owned installation metadata, not a baked
+application default or a database preference. It participates in the same
+rollback transaction as the binary. A later explicit installation can change
+it; callers must repeat their intended `APP_RELEASE_URL` override when rerunning
+an installer directly.
 
-The installers write `maintenance/release-url` under the storage root, the
-source that update checks and self-update read, but only when the effective URL
-matches the official one baked into them at build time. Passing `APP_RELEASE_URL` means that file is never
-written. Periodic checks stay off, and an explicit `update` gives source-neutral
-guidance to repeat the original installation or follow administrator
-instructions. It never falls back to a public host.
+Release checks, manual application, and unattended application all use this
+persisted source. A detached updater passes the same URL to its installer, so
+an update preserves the mirror even though the official installer has a public
+default baked in. Missing or invalid source metadata prevents updating; the
+application never falls back to the public host. Cached discovery information
+from a different source is not used for notices or automatic application.
 
-Two concrete reasons:
+The mirror's `version` pointer is its approval gate. Publishing upstream does
+not change what these installations see. Once you copy, test, and promote a
+release on the mirror, installations can discover and apply it using whichever
+[update capabilities]({{% relref "docs/getting-started/features" %}}) their build
+retains. Unattended application also requires the service and an enabled
+`<app> update --automatic=true` preference. Organizations that control the exact
+installation time can leave that preference disabled and initiate each update
+manually.
 
-- self-update executes the release host's installer, so pointing it at a
-  third-party host would hand that operator code execution on every update;
-- mirrors exist to pin approved versions, and auto-update is the act of
-  unpinning them.
-
-So updating a mirror install is a two-party operation, which is the shape you
-wanted when you built a mirror: you copy and approve the new release set, your
-users re-run the same install command. As a backstop, even a forced update from
-a mirror fails safe. The app cosign-verifies the installer it downloads against
-the official identity before executing it, so a modified script never runs.
+The URL selects a source; it does not replace the signing identity. Every
+application-driven update still verifies the downloaded installer against the
+original baked identity before execution, and the installer verifies release
+artifacts against that identity too. A mirror can select which authentic
+releases it offers or stop serving them; it cannot make a modified installer
+pass those checks.
 
 ## If you really must modify the installer
 
@@ -137,7 +175,7 @@ Discouraged, but the signature model degrades honestly instead of silently:
 - the artifact verification inside the script still chains to the official
   identity, so your users end up trusting two identities: yours for the script,
   the vendor's for the binaries;
-- do not force-write the `release-url` file from a modified script. Self-update
-  from your host would fail cosign verification at update time anyway, so all
-  you would accomplish is a confusing failure later instead of a clear absence
-  now.
+- application-driven updates still require installers signed by the original
+  identity. A modified installer signed only by your organization fails that
+  check; apply it explicitly after your own verification instead. Unmodified
+  official installers served from your host continue to work normally.

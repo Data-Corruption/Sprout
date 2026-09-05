@@ -248,9 +248,9 @@ func runService(
 		{name: "service stop watcher", run: func(ctx context.Context, ready func()) error {
 			return a.RunServiceStopWatcher(ctx, cancel, ready)
 		}},
-		// --- BEGIN update.notifications ---
+		// --- BEGIN update ---
 		{name: "update checker", run: a.RunUpdateChecker},
-		// --- END update.notifications ---
+		// --- END update ---
 		// --- BEGIN service.https ---
 		{name: "dashboard", run: func(ctx context.Context, ready func()) error {
 			go func() {

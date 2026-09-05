@@ -86,7 +86,7 @@ func TestMigrate(t *testing.T) {
 			t.Errorf("Expected LogLevel %s, got %s", buildInfo.DefaultLogLevel, cfg.LogLevel)
 		}
 
-		// --- BEGIN update.notifications ---
+		// --- BEGIN update ---
 		// Verify the periodic update-check lease table is part of schema v1.
 		if _, err := db.Exec(`
 			INSERT INTO update_check_lease (id, owner_token, expires_at)
@@ -94,7 +94,7 @@ func TestMigrate(t *testing.T) {
 		`); err != nil {
 			t.Errorf("update-check lease table not usable: %v", err)
 		}
-		// --- END update.notifications ---
+		// --- END update ---
 
 		// --- BEGIN service.https ---
 		// Verify sessions table exists and is usable.

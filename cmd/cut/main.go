@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"sprout/internal/cut"
 )
@@ -28,7 +29,7 @@ func run(args []string) int {
 Plan the final consumer tree: remove optional Sprout features, remove
 template-only tooling, prune directories those removals leave empty, strip
 surviving ownership markers, and optionally rename the Go module. Arguments are
-a union of features to cut; cutting a parent removes every dotted descendant.
+a union of features to cut; removing a prerequisite also removes its dependents.
 With no feature arguments, every application feature is retained.
 
 The default is a read-only preview. Pass --finalize to apply the same plan,
@@ -37,7 +38,11 @@ then prune unused module requirements with a best-effort go mod tidy.
 Valid features:
 `)
 		for _, name := range cut.Features() {
-			fmt.Fprintf(os.Stderr, "  %s\n", name)
+			fmt.Fprintf(os.Stderr, "  %s", name)
+			if dependencies := cut.Prerequisites(name); len(dependencies) != 0 {
+				fmt.Fprintf(os.Stderr, " (requires %s)", strings.Join(dependencies, ", "))
+			}
+			fmt.Fprintln(os.Stderr)
 		}
 		fmt.Fprintf(os.Stderr, `
 Flags:

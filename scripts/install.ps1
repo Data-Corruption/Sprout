@@ -13,8 +13,8 @@ checksums, then the downloaded artifact is verified against those checksums.
 Example: irm https://releases.sproutcli.dev/install.ps1 | iex
 
 Mirrors: set APP_RELEASE_URL to install from a byte-for-byte mirror of the
-official release artifacts; cosign signatures remain valid. Mirror installs do
-not write the release-url file, which disables update checks and self-update.
+official release artifacts; cosign signatures remain valid. The effective
+source is persisted for later checks and updates, including unattended updates.
 
 Testing: set APP_SKIP_VERIFY=true to skip cosign signature verification (the
 plain sha256 check still runs). Never use it for real installs.
@@ -1434,7 +1434,6 @@ try {
         $releaseUrlSource = $env:APP_RELEASE_URL
     }
     $releaseUrl = Normalize-ReleaseUrl -Url $releaseUrlSource
-    $officialReleaseUrl = Normalize-ReleaseUrl -Url $DefaultReleaseUrl
 
     $FreshInstall = ($null -eq $CurrentState -or $CurrentState.phase -ceq "uninstalled")
     # --- BEGIN service ---
@@ -1585,22 +1584,15 @@ try {
     $BinaryChanged = $true
 
     # --- BEGIN update ---
-    # The release-url file enables update checks and self-update. It is only
-    # written for installs from the official release URL; mirrors must not
-    # self-check.
+    # Persist the effective source, including mirror overrides, in the same
+    # rollback transaction as the binary and service definition.
     if (Test-Path -LiteralPath $ReleaseUrlFile -PathType Leaf) {
         $ReleaseUrlExisted = $true
         $OldReleaseUrl = [IO.File]::ReadAllText($ReleaseUrlFile)
     }
-    if ($releaseUrl -eq $officialReleaseUrl) {
-        Write-Step "Writing release source to $ReleaseUrlFile ..."
-        $ReleaseUrlChanged = $true
-        [IO.File]::WriteAllText($ReleaseUrlFile, $releaseUrl + "`n")
-    } elseif ($ReleaseUrlExisted) {
-        Write-Step "Mirror install: removing release source file (disables in-app update checks) ..."
-        $ReleaseUrlChanged = $true
-        Remove-Item -LiteralPath $ReleaseUrlFile -Force
-    }
+    Write-Step "Writing release source to $ReleaseUrlFile ..."
+    $ReleaseUrlChanged = $true
+    [IO.File]::WriteAllText($ReleaseUrlFile, $releaseUrl + "`n")
     # --- END update ---
 
     # Cache the independently signed controller beside retained maintenance

@@ -1,4 +1,4 @@
-// --- FILE update.notifications ---
+// --- FILE update ---
 
 package updatelease_test
 

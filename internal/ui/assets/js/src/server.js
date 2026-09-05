@@ -37,7 +37,7 @@ export async function restartServer() {
     }
 }
 
-// --- BEGIN update.self ---
+// --- BEGIN update.apply ---
 /** Check freshness, then launch an update when one is available. */
 export async function updateServer() {
     blockClicks();
@@ -60,7 +60,7 @@ export async function updateServer() {
     }
 }
 
-// --- END update.self ---
+// --- END update.apply ---
 
 /** Poll for restart or update completion. */
 export function pollForRestart(action = 'restart') {
@@ -83,13 +83,13 @@ export function pollForRestart(action = 'restart') {
                 return;
             }
 
-            // --- BEGIN update.self ---
+            // --- BEGIN update.apply ---
             if (action === 'update' && !data.updated) {
                 unblockClicks();
                 showError('The service restarted, but the update did not apply. Check the update logs.');
                 return;
             }
-            // --- END update.self ---
+            // --- END update.apply ---
 
             window.location.reload();
         } catch {
@@ -123,7 +123,7 @@ export function initServerControls() {
             onCancel: () => {},
         });
     });
-    // --- BEGIN update.self ---
+    // --- BEGIN update.apply ---
     document.getElementById('settings-update-btn')?.addEventListener('click', () => {
         showDialog({
             title: 'Update Server',
@@ -134,5 +134,5 @@ export function initServerControls() {
             onCancel: () => {},
         });
     });
-    // --- END update.self ---
+    // --- END update.apply ---
 }
