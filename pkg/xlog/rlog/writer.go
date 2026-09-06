@@ -64,13 +64,18 @@ const (
 	DefaultMaxLogFiles = 8                 // rotated files kept (excluding latest.log)
 )
 
-// Each lock covers one write/sync and any rotation it triggers, so a peer
-// holding it this long is wedged. Bounding the wait degrades a stuck peer
-// into a failed write instead of parking Write forever. The failure is not
+// Each lock covers one write/sync and any rotation it triggers. Bound the
+// total wait under contention instead of parking Write forever; a timeout
+// need not mean that any one peer held the lock for the whole wait. It is not
 // sticky: nothing was written, the buffer is intact, and the peer may
 // recover, so the next write or age flush tries again. A variable so tests
 // can shorten it.
 var fileLockTimeout = 10 * time.Second
+
+// Log writes release and reacquire their lock frequently. The general-purpose
+// 100ms poll can repeatedly miss those gaps on a busy disk and starve a writer
+// even while its peers make progress. Retry promptly within the same deadline.
+const fileLockPoll = 5 * time.Millisecond
 
 var ErrClosed = errors.New("log writer is closed")
 
@@ -366,7 +371,7 @@ func (w *Writer) acquireFileLock() (*xsyscall.Lock, error) {
 	lock, err := xsyscall.AcquireLock(
 		context.Background(),
 		filepath.Join(w.cfg.DirPath, ".rotate.lock"),
-		xsyscall.LockOptions{Mode: xsyscall.ModeExclusive, Timeout: fileLockTimeout},
+		xsyscall.LockOptions{Mode: xsyscall.ModeExclusive, Timeout: fileLockTimeout, Poll: fileLockPoll},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire log file lock: %w", err)

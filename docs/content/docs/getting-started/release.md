@@ -121,7 +121,8 @@ Commit the complete release and push it to `main`. CI runs the tests, then:
 3. signs the checksums and uploads `releases/<version>/`;
 4. downloads and verifies what it just uploaded;
 5. deterministically renders both root installers;
-6. signs and replaces an installer only if its bytes actually changed;
+6. tests changed installers against the staged and any current release, then
+   signs and replaces them;
 7. moves the root `version` pointer;
 8. records the promotion, pushes the Git tag, then applies retention.
 
@@ -219,6 +220,10 @@ re-sign or re-upload them unless their rendered bytes changed, and when they do
 change, CI exercises the new installer against both the current and the staged
 release before promoting anything. Keep that in mind if you plan on editing
 the installers.
+
+The Linux E2E and release jobs each provision Incus through the shared
+`setup-incus` action on Ubuntu 24.04. Every job has its own runner; the release
+job needs its own daemon for these final installer checks.
 
 ## Testing the machinery
 

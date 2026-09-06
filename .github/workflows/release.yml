@@ -214,7 +214,7 @@ jobs:
 
   # --- BEGIN template ---
   # Validate all 11 supported update/service source variants in isolated
-  # temporary copies, including surviving installer syntax and frontend states.
+  # temporary copies, including shell lint, surviving installer syntax, and frontend states.
   cut-matrix:
     needs: ci-gate
     if: ${{ needs.ci-gate.outputs.enabled == 'true' }}
@@ -268,43 +268,8 @@ jobs:
           dirname "$rclone_bin" >> "$GITHUB_PATH"
           "$rclone_bin" version
 
-      - name: Install and initialize Incus
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq incus
-          sudo systemctl start incus.socket
-          sudo incus admin init --minimal
-
-          # The hosted runner also runs Docker, whose global forwarding policy
-          # can otherwise drop traffic from the Incus managed bridge.
-          sudo sysctl -w net.ipv4.conf.all.forwarding=1
-          if sudo iptables -nL DOCKER-USER >/dev/null 2>&1; then
-            sudo iptables -C DOCKER-USER -i incusbr0 -j ACCEPT 2>/dev/null ||
-              sudo iptables -I DOCKER-USER -i incusbr0 -j ACCEPT
-            sudo iptables -C DOCKER-USER -o incusbr0 \
-              -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null ||
-              sudo iptables -I DOCKER-USER -o incusbr0 \
-                -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-          fi
-
-          sudo incus info
-          smoke="sprout-incus-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          trap 'sudo incus delete "$smoke" --force >/dev/null 2>&1 || :' EXIT
-          sudo incus init images:alpine/3.24 "$smoke"
-          sudo incus start "$smoke"
-          ready=false
-          for _ in {1..120}; do
-            if sudo incus exec "$smoke" -- true >/dev/null 2>&1; then
-              ready=true
-              break
-            fi
-            sleep 0.25
-          done
-          if [[ "$ready" != "true" ]]; then
-            sudo incus info "$smoke" --show-log
-            exit 1
-          fi
+      - name: Set up Incus
+        uses: ./.github/actions/setup-incus
 
       # The only Linux run of the Go suite that survives finalize: cut-matrix
       # is template-only and windows-test covers Windows.
@@ -340,7 +305,8 @@ jobs:
       - cut-matrix
       # --- END template ---
       - lifecycle-e2e
-    runs-on: ubuntu-latest
+    # Installer validation runs here too; jobs do not share the E2E daemon.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: write # build.sh pushes the release tag
@@ -368,6 +334,9 @@ jobs:
           }
           dirname "$rclone_bin" >> "$GITHUB_PATH"
           "$rclone_bin" version
+
+      - name: Set up Incus
+        uses: ./.github/actions/setup-incus
 
       - name: Build, sign, and release
         env:

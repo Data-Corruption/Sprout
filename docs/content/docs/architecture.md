@@ -465,12 +465,13 @@ you can run as many CLI processes against a running service as you want.
 
 The dependency graph has eleven valid update/service combinations. Both Linux
 and Windows matrices enumerate those combinations from the cutter's feature
-definitions. For each one the harness copies the repo to a temp directory, runs `scripts/cut --finalize`
-with a replacement module path and that variant's feature list, bundles the
-frontend when the dashboard survived, syntax-checks the surviving `install.sh`,
+definitions. For each one the Linux harness copies the repo to a temp directory,
+runs `scripts/cut --finalize` with a replacement module path and that variant's
+feature list, bundles the frontend when the dashboard survived, lints all
+surviving shell scripts with the pinned ShellCheck, syntax-checks `install.sh`,
 and runs `go test -race ./...` inside it. A cut or rename that leaves an unused
-import, an orphaned call, or a test referencing deleted code fails here rather
-than in your fork.
+import, an unused shell variable, an orphaned call, or a test referencing deleted
+code fails here rather than in your fork.
 
 Finalization deletes this harness and the cutter automatically during
 [step 3]({{% relref "docs/getting-started/cut" %}}). They exist only for the

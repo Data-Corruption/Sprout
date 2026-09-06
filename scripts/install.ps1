@@ -799,16 +799,23 @@ function Assert-SafeOwnedDirectory {
         (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
         throw "Refusing to remove non-directory or reparse-point path '$actualFull'."
     }
-    $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    $ownerSid = (Get-Acl -LiteralPath $actualFull).GetOwner(
-        [Security.Principal.SecurityIdentifier]
-    )
-    if (-not [string]::Equals(
-        $ownerSid.Value,
-        $currentSid.Value,
-        [StringComparison]::OrdinalIgnoreCase
-    )) {
-        throw "Refusing directory '$actualFull' owned by SID '$($ownerSid.Value)'; expected '$($currentSid.Value)'."
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    try {
+        $currentSid = $identity.User
+        # Windows uses the token's default owner for new directories. This
+        # can be Administrators on an elevated runner; other owners still fail.
+        $defaultOwnerSid = $identity.Owner
+        $ownerSid = (Get-Acl -LiteralPath $actualFull).GetOwner(
+            [Security.Principal.SecurityIdentifier]
+        )
+        if ($null -eq $ownerSid -or $null -eq $currentSid -or $null -eq $defaultOwnerSid) {
+            throw "Could not determine ownership for directory '$actualFull'."
+        }
+        if (-not ($ownerSid.Equals($currentSid) -or $ownerSid.Equals($defaultOwnerSid))) {
+            throw "Refusing directory '$actualFull' owned by SID '$($ownerSid.Value)'; expected token user '$($currentSid.Value)' or default owner '$($defaultOwnerSid.Value)'."
+        }
+    } finally {
+        $identity.Dispose()
     }
 }
 

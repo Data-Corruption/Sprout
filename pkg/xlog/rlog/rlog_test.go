@@ -296,6 +296,44 @@ func TestLockTimeoutIsNotSticky(t *testing.T) {
 
 // --- concurrency ------------------------------------------------------------
 
+func TestFlushRetriesReleasedLockWithinBudget(t *testing.T) {
+	// Model a short opportunity to acquire the lock. Using less than the
+	// general-purpose poll interval makes a missed retry deterministic without
+	// needing the hosted Windows runner's disk latency or a ten-second test.
+	saved := fileLockTimeout
+	fileLockTimeout = 80 * time.Millisecond
+	t.Cleanup(func() { fileLockTimeout = saved })
+	dir := t.TempDir()
+	w, err := NewWriter(Config{DirPath: dir, MaxBufAge: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	held, err := xsyscall.AcquireLock(context.Background(), filepath.Join(dir, ".rotate.lock"),
+		xsyscall.LockOptions{Mode: xsyscall.ModeExclusive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	if _, err := w.Write([]byte("retried\n")); err != nil {
+		t.Fatal(err)
+	}
+	released := make(chan error, 1)
+	timer := time.AfterFunc(20*time.Millisecond, func() { released <- held.Close() })
+	defer timer.Stop()
+	flushErr := w.Flush()
+	if err := <-released; err != nil {
+		t.Fatal(err)
+	}
+	if flushErr != nil {
+		t.Fatalf("flush missed the released lock: %v", flushErr)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "latest.log"))
+	if err != nil || string(data) != "retried\n" {
+		t.Fatalf("latest.log = %q, %v; want the buffered record exactly once", data, err)
+	}
+}
+
 func TestConcurrentWrites(t *testing.T) {
 	tempDir := t.TempDir()
 	w, err := NewWriter(Config{DirPath: tempDir})

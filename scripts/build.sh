@@ -93,9 +93,11 @@ source "$BUILD_SCRIPT_DIR/vendor.sh"
 
 OUT_DIR="out"
 RELEASE_DIR="$OUT_DIR/release"
+# --- BEGIN service.https ---
 JS_DIR="./internal/ui/assets/js"
 CSS_DIR="./internal/ui/assets/css"
 ASSETS_DIR="./internal/ui/assets"
+# --- END service.https ---
 GO_MAIN_PATH="./cmd"
 
 NO_CACHE='Cache-Control: no-store, max-age=0, must-revalidate' # unneeded with cache rule but just in case

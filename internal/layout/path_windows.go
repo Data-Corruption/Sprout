@@ -3,10 +3,13 @@
 package layout
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -79,12 +82,53 @@ func validateDirOwner(path string) error {
 	if owner == nil {
 		return fmt.Errorf("directory has no owner")
 	}
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	token := windows.GetCurrentProcessToken()
+	user, err := token.GetTokenUser()
 	if err != nil {
 		return fmt.Errorf("read process token user: %w", err)
 	}
-	if !owner.Equals(user.User.Sid) {
-		return fmt.Errorf("owner SID is %s, want %s", owner, user.User.Sid)
+	defaultOwner, err := tokenDefaultOwner(token)
+	if err != nil {
+		return fmt.Errorf("read process token default owner: %w", err)
+	}
+	if !ownerMatchesToken(owner, user.User.Sid, defaultOwner) {
+		return fmt.Errorf("owner SID is %s, want token user %s or default owner %s", owner, user.User.Sid, defaultOwner)
 	}
 	return nil
+}
+
+func ownerMatchesToken(owner, user, defaultOwner *windows.SID) bool {
+	return owner != nil && user != nil && defaultOwner != nil &&
+		(owner.Equals(user) || owner.Equals(defaultOwner))
+}
+
+func tokenDefaultOwner(token windows.Token) (*windows.SID, error) {
+	// Windows assigns TokenOwner to new objects. Under elevation this can be
+	// Administrators rather than TokenUser; do not blanket-allow that group for
+	// other tokens or repair an existing directory's ownership.
+	// https://learn.microsoft.com/windows/win32/secauthz/owner-of-a-new-object
+	var size uint32
+	err := windows.GetTokenInformation(token, windows.TokenOwner, nil, 0, &size)
+	if !errors.Is(err, windows.ERROR_INSUFFICIENT_BUFFER) {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("token owner query returned no buffer size")
+	}
+	if size < uint32(unsafe.Sizeof(uintptr(0))) {
+		return nil, fmt.Errorf("token owner buffer is too small")
+	}
+	buffer := make([]byte, size)
+	if err := windows.GetTokenInformation(token, windows.TokenOwner, &buffer[0], size, &size); err != nil {
+		return nil, err
+	}
+	// TOKEN_OWNER contains one SID pointer into the returned buffer. Copy the
+	// SID so callers never depend on that buffer's lifetime.
+	owner := *(**windows.SID)(unsafe.Pointer(&buffer[0]))
+	if owner == nil || !owner.IsValid() {
+		return nil, fmt.Errorf("token has no valid default owner")
+	}
+	copy, err := owner.Copy()
+	runtime.KeepAlive(buffer)
+	return copy, err
 }

@@ -1,0 +1,43 @@
+name: Set up Incus
+description: Install Incus and verify a system container on an Ubuntu 24.04 runner.
+runs:
+  using: composite
+  steps:
+    - name: Install and initialize Incus
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update -qq
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq incus
+        sudo systemctl start incus.socket
+        sudo incus admin init --minimal
+
+        # The hosted runner also runs Docker, whose global forwarding policy
+        # can otherwise drop traffic from the Incus managed bridge.
+        sudo sysctl -w net.ipv4.conf.all.forwarding=1
+        if sudo iptables -nL DOCKER-USER >/dev/null 2>&1; then
+          sudo iptables -C DOCKER-USER -i incusbr0 -j ACCEPT 2>/dev/null ||
+            sudo iptables -I DOCKER-USER -i incusbr0 -j ACCEPT
+          sudo iptables -C DOCKER-USER -o incusbr0 \
+            -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null ||
+            sudo iptables -I DOCKER-USER -o incusbr0 \
+              -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+        fi
+
+        sudo incus info
+        smoke="sprout-incus-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+        trap 'sudo incus delete "$smoke" --force >/dev/null 2>&1 || :' EXIT
+        sudo incus init images:alpine/3.24 "$smoke"
+        sudo incus start "$smoke"
+        ready=false
+        for _ in {1..120}; do
+          if sudo incus exec "$smoke" -- true >/dev/null 2>&1; then
+            ready=true
+            break
+          fi
+          sleep 0.25
+        done
+        if [[ "$ready" != "true" ]]; then
+          sudo incus info "$smoke" --show-log
+          exit 1
+        fi

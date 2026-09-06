@@ -81,6 +81,11 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "cutmatrix: prepare frontend bundler: %v\nretained root: %s\n", err, matrixRoot)
 		return 1
 	}
+	shellcheckPath, err := vendorTool(root, "shellcheck", *timeoutFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cutmatrix: prepare shell linter: %v\nretained root: %s\n", err, matrixRoot)
+		return 1
+	}
 
 	type result struct {
 		variant variant
@@ -100,7 +105,7 @@ func run() int {
 			results <- result{
 				variant: item,
 				path:    path,
-				err:     testVariant(root, path, esbuildPath, item, *timeoutFlag),
+				err:     testVariant(root, path, esbuildPath, shellcheckPath, item, *timeoutFlag),
 			}
 		}()
 	}
@@ -134,7 +139,7 @@ func run() int {
 	return 0
 }
 
-func testVariant(root, destination, esbuildPath string, item variant, timeout time.Duration) error {
+func testVariant(root, destination, esbuildPath, shellcheckPath string, item variant, timeout time.Duration) error {
 	if err := copyTree(root, destination); err != nil {
 		return fmt.Errorf("copy source: %w", err)
 	}
@@ -149,6 +154,9 @@ func testVariant(root, destination, esbuildPath string, item variant, timeout ti
 		return commandError(ctx, "cut "+strings.Join(cutArgs, " "), output, err)
 	}
 	if err := validateFinalTree(destination, item); err != nil {
+		return err
+	}
+	if err := lintShellScripts(ctx, destination, shellcheckPath); err != nil {
 		return err
 	}
 	if item.hasHTTPS {
@@ -173,6 +181,30 @@ func testVariant(root, destination, esbuildPath string, item variant, timeout ti
 	}
 	if output, err := runCommand(ctx, destination, "go", "test", "-race", "./..."); err != nil {
 		return commandError(ctx, "go test -race ./...", output, err)
+	}
+	return nil
+}
+
+func lintShellScripts(ctx context.Context, root, shellcheckPath string) error {
+	// Top-level scripts are entrypoints; --external-sources checks build/*.sh
+	// in the context that supplies their variables, just like test.sh -lint.
+	scripts, err := filepath.Glob(filepath.Join(root, "scripts", "*.sh"))
+	if err != nil {
+		return fmt.Errorf("list shell scripts: %w", err)
+	}
+	if len(scripts) == 0 {
+		return fmt.Errorf("finalized tree has no shell scripts")
+	}
+	args := []string{"--external-sources", "--source-path=scripts", "--source-path=scripts/build"}
+	for _, script := range scripts {
+		relative, err := filepath.Rel(root, script)
+		if err != nil {
+			return err
+		}
+		args = append(args, relative)
+	}
+	if output, err := runCommand(ctx, root, shellcheckPath, args...); err != nil {
+		return commandError(ctx, "lint finalized shell scripts", output, err)
 	}
 	return nil
 }

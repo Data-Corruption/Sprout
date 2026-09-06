@@ -39,9 +39,11 @@ umask 077
 # set by build.sh before uploading
 APP_NAME="<APP_NAME>"
 RELEASE_URL="<RELEASE_URL>"
+# --- BEGIN service ---
 SERVICE="<SERVICE>"
 SERVICE_DESC="<SERVICE_DESC>"
 SERVICE_ARGS="<SERVICE_ARGS>"
+# --- END service ---
 # cosign keyless identity of the CI workflow that signed this release
 CERT_IDENTITY="<CERT_IDENTITY>"
 OIDC_ISSUER="<OIDC_ISSUER>"
@@ -77,27 +79,35 @@ MAINTENANCE_LOG="$LOGS_DIR/maintenance.log"
 RELEASE_URL_FILE="$MAINTENANCE_DIR/release-url"
 # --- END update ---
 
+# --- BEGIN service ---
 SERVICE_NAME="$APP_NAME.service"
 SERVICE_FILE="$HOME/.config/systemd/user/$SERVICE_NAME"
 SERVICE_WANTS_LINK="$HOME/.config/systemd/user/default.target.wants/$SERVICE_NAME"
 SERVICE_READY_TIMEOUT_SECONDS=90
+# --- END service ---
 LOCK_TIMEOUT_SECONDS=300
 
+# --- BEGIN service ---
 USER_NAME="${USER:-$(id -un)}" # $USER is not always exported
+# --- END service ---
 USER_ID=$(id -u)
 
 # Globals used by rollback/cleanup --------------------------------------------
 temp_dir=""
 old_app_bin=""
-old_service_file=""
 app_bin_exists=0
 binary_changed=0
-fresh_install=1
+# --- BEGIN service ---
+old_service_file=""
 service_exists=0
 service_was_enabled=0
 service_was_active=0
 service_touched=0
+# --- END service ---
+# --- BEGIN service.https ---
+fresh_install=1
 default_port=""
+# --- END service.https ---
 migration_nonce=""
 migration_started=0
 state_transition_written=0
@@ -111,7 +121,9 @@ state_changed_at=""
 state_epoch=""
 transaction_phase=""
 transaction_epoch=""
+# --- BEGIN service ---
 recovering_transition=0
+# --- END service ---
 cached_installer_exists=0
 cached_bundle_exists=0
 cached_installer_changed=0
@@ -613,7 +625,9 @@ port_in_use() {
 
 rollback() {
     rb=0
+    # --- BEGIN service ---
     restart_old_service=0
+    # --- END service ---
     if [ "$binary_changed" -eq 1 ]; then
         printf 'Restoring previous installation ...\n'
         if [ "$app_bin_exists" -eq 1 ] && [ -n "$old_app_bin" ] && [ -s "$old_app_bin" ]; then
@@ -764,7 +778,10 @@ if [ "$MODE" = "uninstall" ]; then
     exit 0
 fi
 
-[ -f "$APP_BIN" ] && app_bin_exists=1 && fresh_install=0
+[ -f "$APP_BIN" ] && app_bin_exists=1
+# --- BEGIN service.https ---
+[ "$app_bin_exists" -eq 1 ] && fresh_install=0
+# --- END service.https ---
 
 load_state
 if [ "$MODE" = "update" ]; then
@@ -788,7 +805,9 @@ else
             # install/update. Preserve the installation lifetime.
             transaction_phase=$state_phase
             transaction_epoch=$state_epoch
+            # --- BEGIN service ---
             recovering_transition=1
+            # --- END service ---
             ;;
         uninstalling)
             fatalf 'Uninstall is already in progress; run the cached installer with --uninstall to finish it'
@@ -826,7 +845,9 @@ if [ "$SERVICE" = "true" ]; then
     # track prior state
     if systemctl --user cat "$SERVICE_NAME" >/dev/null 2>&1; then
         service_exists=1
+        # --- BEGIN service.https ---
         fresh_install=0
+        # --- END service.https ---
         if systemctl --user is-enabled --quiet "$SERVICE_NAME"; then service_was_enabled=1; fi
         if systemctl --user is-active  --quiet "$SERVICE_NAME"; then service_was_active=1; fi
     fi
@@ -1043,17 +1064,15 @@ fi
 # --- END service ---
 
 # Backup (for rollback) -------------------------------------------------------
-if [ -f "$APP_BIN" ] || [ "$service_exists" -eq 1 ]; then
-    printf 'Backing up current installation ...\n'
-fi
-
 if [ -f "$APP_BIN" ]; then
+    printf 'Backing up current binary ...\n'
     old_app_bin="$temp_dir/$APP_NAME.old"
     cp -f "$APP_BIN" "$old_app_bin" || { rc=$?; fatalf 'Failed to backup existing binary (rc=%d)' "$rc"; }
 fi
 
 # --- BEGIN service ---
 if [ "$SERVICE" = "true" ] && [ "$service_exists" -eq 1 ]; then
+    printf 'Backing up current service ...\n'
     old_service_file="$temp_dir/$SERVICE_NAME.old"
     systemctl --user cat "$SERVICE_NAME" > "$old_service_file" || { rc=$?; fatalf 'Failed to backup existing service unit file (rc=%d)' "$rc"; }
 fi

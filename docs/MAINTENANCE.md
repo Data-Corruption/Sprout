@@ -47,6 +47,12 @@ The Linux binary remains at `~/.local/bin/<app>` and its optional user unit at
 `%LOCALAPPDATA%\Programs\<AppName>` and the optional service is a user Scheduled
 Task. Managed Cosign is shared rather than application-owned.
 
+On Windows, an owned directory must belong to the current token's user or its
+default owner SID. Windows may use the Administrators group as the default
+owner for an elevated token. Both Go and the PowerShell installer use this
+rule; unrelated owners, non-directories, and reparse points remain errors.
+Ownership is never silently rewritten.
+
 All application path policy lives in `internal/layout`. `internal/app` receives
 one `layout.Layout` and does not independently resolve storage or temporary
 paths.
