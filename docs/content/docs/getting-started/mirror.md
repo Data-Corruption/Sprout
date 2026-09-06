@@ -1,39 +1,15 @@
 ---
-title: 7. End-user mirror
+title: Run a mirror
 weight: 7
 ---
 
-Most applications never need this page. It exists for the situation where
-somebody else decides which version your users are allowed to run: compliance
-review, vulnerability scanning, an internal approval gate, or a network that
-does not reach your release host.
+Use a mirror to review releases before making them available to users, or to
+serve installations that cannot reach the public release host. Copy the official
+artifacts unchanged so they retain their signatures.
 
-The whole thing works because of one property:
+## Stage a release
 
-{{< callout type="information" >}}
-Cosign signatures cover bytes and signer identity. Nothing about the download
-location is signed. A byte-for-byte copy of the official artifacts verifies
-identically from any host on earth.
-{{< /callout >}}
-
-So a mirror is not a special build, a re-sign, or a fork. It is a copy of static
-files on any host that can serve them, and the verification your users perform
-still chains back to your CI identity rather than to the mirror operator.
-
-## What gets copied
-
-Two independent things live at the release root: the generic installers, which
-change only when their own bytes change, and a `version` pointer naming the
-promoted release. Everything else lives under an immutable
-`releases/<version>/` prefix. [Publish a release]({{% relref "docs/getting-started/release" %}})
-has the full layout; a mirror needs the four root installer objects, the root
-`version`, and every prefix it wants to keep serving.
-
-## Operate one
-
-Copy unmodified. Upload the immutable prefix first and replace the mirror's root
-`version` last, exactly like the real publisher does, so a user who starts an
-install during your sync still finishes against a complete release:
+In an empty staging directory, download a release and the root installers:
 
 ```sh
 set -eu
@@ -56,9 +32,12 @@ printf '%s\n' "$version" > version
 # Verify, test, and approve before publishing; publish the root version last.
 ```
 
-This example downloads a stable release into a local staging directory. For
-prerelease versions, validate the full semantic version before using it as a
-path. A download is not an approval or a signature check. Before publishing:
+This example accepts stable versions. For prereleases, validate the full semantic
+version before using it as a path.
+
+## Verify and publish
+
+Before publishing:
 
 1. Verify `checksums.txt.cosign.bundle` against the original workflow identity,
    then match every release artifact against the signed checksums. Verify both
@@ -70,7 +49,7 @@ path. A download is not an approval or a signature check. Before publishing:
    copy before making it discoverable. Never replace a version with different bytes.
 4. Publish the verified root installer pairs. Publish each bundle before its
    installer, which is the pair's commit point, as described in
-   [Publish a release]({{% relref "docs/getting-started/release" %}}). A reader
+   [release publication]({{% relref "docs/architecture" %}}#releases). A reader
    encountering the temporary mismatch fails verification safely; it can retry.
    If publication stops between the two objects, finish publishing that exact
    verified pair before promoting the release. Leave unchanged pairs alone.
@@ -95,10 +74,10 @@ longer. Keeping all approved releases indefinitely is also fine and can provide
 an approval history. Mirror retention is independent of upstream retention;
 copy everything you need before upstream removes it.
 
-## Install from one
+## Install from the mirror
 
-Users run the official installer and point it somewhere else with an
-environment variable.
+Install Cosign using the [installer verification instructions]({{% relref "docs/getting-started/operate" %}}#install),
+then substitute your mirror URL and the original repository identity below.
 
 Linux:
 
@@ -126,56 +105,18 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 $env:APP_RELEASE_URL = $null
 ```
 
-Verify against the *original* release workflow identity, not the mirror's. From
-there the run is identical to an official install. The installer reads the
-mirror's root `version` once, pins it, downloads `checksums.txt` and its bundle,
-verifies them with cosign, and SHA-256-matches both the prefix version file and
-the binary it selected.
+Continue only if verification succeeds. Use the original release workflow's
+identity when verifying the copied installer.
 
 ## Updates stay on the mirror
 
-When update support is retained, the installer writes the effective source URL
-into `maintenance/release-url`, including a mirror supplied through
-`APP_RELEASE_URL`. This is installer-owned installation metadata, not a baked
-application default or a database preference. It participates in the same
-rollback transaction as the binary. A later explicit installation can change
-it; callers must repeat their intended `APP_RELEASE_URL` override when rerunning
-an installer directly.
+The installer saves the mirror URL for future checks and updates. Repeat your
+`APP_RELEASE_URL` override whenever you rerun the installer directly; updates
+launched by the application preserve it automatically.
 
-Release checks, manual application, and unattended application all use this
-persisted source. A detached updater passes the same URL to its installer, so
-an update preserves the mirror even though the official installer has a public
-default baked in. Missing or invalid source metadata prevents updating; the
-application never falls back to the public host. Cached discovery information
-from a different source is not used for notices or automatic application.
+Advance the mirror's `version` pointer only after approving a release. Users
+can then discover it with `<APP> update`. To require manual installation, leave
+`<APP> update --automatic=false`; unattended updates are disabled by default.
 
-The mirror's `version` pointer is its approval gate. Publishing upstream does
-not change what these installations see. Once you copy, test, and promote a
-release on the mirror, installations can discover and apply it using whichever
-[update capabilities]({{% relref "docs/getting-started/features" %}}) their build
-retains. Unattended application also requires the service and an enabled
-`<app> update --automatic=true` preference. Organizations that control the exact
-installation time can leave that preference disabled and initiate each update
-manually.
-
-The URL selects a source; it does not replace the signing identity. Every
-application-driven update still verifies the downloaded installer against the
-original baked identity before execution, and the installer verifies release
-artifacts against that identity too. A mirror can select which authentic
-releases it offers or stop serving them; it cannot make a modified installer
-pass those checks.
-
-## If you really must modify the installer
-
-Discouraged, but the signature model degrades honestly instead of silently:
-
-- your modified script no longer verifies against the official identity, so
-  re-sign it with your own cosign identity and tell your users to verify against
-  *you*;
-- the artifact verification inside the script still chains to the official
-  identity, so your users end up trusting two identities: yours for the script,
-  the vendor's for the binaries;
-- application-driven updates still require installers signed by the original
-  identity. A modified installer signed only by your organization fails that
-  check; apply it explicitly after your own verification instead. Unmodified
-  official installers served from your host continue to work normally.
+See [release sources and mirrors]({{% relref "docs/architecture" %}}#release-sources-and-mirrors)
+for source persistence and signing behavior.

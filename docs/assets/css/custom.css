@@ -61,37 +61,23 @@
   background: #334155;
 }
 
-#content:has(.sp-hero) .hextra-cards {
-  width: calc(100% - clamp(3rem, 8vw, 8rem));
-  max-width: 96rem;
-  gap: clamp(1rem, 2vw, 1.5rem);
+#content:has(.sp-hero) .content > .sp-features {
+  width: calc(100% - 3rem);
+  max-width: 62rem;
   margin: 1.75rem auto 0;
+  padding-left: 1.25rem;
+  box-sizing: border-box;
+  font-size: 1.05rem;
+  line-height: 1.75;
 }
 
-#content:has(.sp-hero) .hextra-card {
-  min-height: 11rem;
+.sp-features > li {
+  margin-block: 0.75rem;
+  padding-left: 0.25rem;
 }
 
-#content:has(.sp-hero) .hextra-card > div {
-  width: 100%;
-  margin-top: 0;
-}
-
-#content:has(.sp-hero) .hextra-card-icon {
-  padding: 1.5rem 1.5rem 0;
-  font-size: 1.15rem;
-  line-height: 1.35;
-}
-
-#content:has(.sp-hero) .hextra-card-subtitle {
-  display: block;
-  margin: 0.75rem 0 1.5rem;
-  padding-inline: 1.5rem;
-  overflow: visible;
-  font-size: 1rem;
-  line-height: 1.55;
-  line-clamp: unset;
-  -webkit-line-clamp: unset;
+.sp-features a {
+  font-weight: 600;
 }
 
 #content:has(.sp-hero) .content > .sp-comparison {
@@ -395,10 +381,6 @@
   .hextra-max-page-width:has(#content .sp-hero) > .hextra-toc {
     display: none;
   }
-
-  #content:has(.sp-hero) .hextra-cards {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 40rem) {
@@ -451,7 +433,8 @@
   font-size: 0.875em;
   padding: 0.15em 0.45em;
   border-radius: 5px;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 
   /* light mode: soft indigo-tinted background, deep indigo text */
   background: #eef0ff;

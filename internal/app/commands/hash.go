@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -32,7 +31,6 @@ func hashCommand(a *app.App) *cli.Command {
 				return fmt.Errorf("text is required")
 			}
 			text := strings.Join(args, " ")
-			fmt.Fprintln(os.Stderr, "Warning: command-line text is visible in shell history and process listings; this SHA-256 example is not password hashing.")
 
 			waitCtx, cancel := context.WithTimeout(ctx, hashWaitTimeout)
 			defer cancel()

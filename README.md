@@ -15,11 +15,7 @@ is ever unreachable:
 
 - [Getting started](docs/content/docs/getting-started/_index.md): features,
   cutting, building, releasing, installing, operating
-- [Architecture](docs/content/docs/architecture.md): how it be
-- [Philosophy](docs/content/docs/philosophy.md): why it be
-- 🐝: dat's a bee
-<!-- Bees communicate by wiggling, I'm not kidding. It's the cutest thing
-ever. https://youtu.be/-7ijI-g4jHg -->
+- [Architecture](docs/content/docs/architecture.md): design and subsystem reference
 
 ## Quick start
 
@@ -53,5 +49,4 @@ on both architectures; macOS and BSD are not currently supported.
 
 [MIT](LICENSE.md)
 
-<!-- Hope you had fun, thanks for coming out. Stay safe and have a nice
-drive home <3 xoxo -->
+<!-- https://youtu.be/zwZISypgA9M -->

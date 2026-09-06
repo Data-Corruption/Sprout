@@ -1,45 +1,30 @@
 ---
-title: Getting Started
+title: Getting started
 weight: 1
 ---
 
-These docs break usage into six steps. By the end you'll have your own app
-users can install. The steps don't really dig into / explain how things work at
-a deep level, for that see [this]({{% relref "docs/architecture" %}}) or read
-the source.
+Follow these steps to create an application and publish its first release.
+[Transplant](create/#with-transplant) can handle the first three for you.
 
-## Development Prerequisites  
+## Prerequisites
 
-- Linux (WSL works) on `amd64` or `arm64`.
-- Go, a version equal to or greater than the one in `go.mod`.
-- Bash and `curl` (already present on most distros).
-- `gcc` or `cc` (only cause `go test -race` still needs it).
+- Linux or WSL on `amd64` or `arm64`.
+- Go at least as new as the version in the repository's `go.mod`.
+- Bash, `curl`, and `gcc` or `cc` for the race-enabled tests.
 
-{{< callout type="information" >}}
-On NixOS, running `nix develop` in your repo's root gives you everything needed
-for development. If you happen to already have `tailwindcss` on `PATH`, the
-build will use that instead.
-{{< /callout >}}
+On NixOS, run `nix develop` in the repository root to load the development tools.
 
 ## Steps
 
-**Configure** ([Transplant](create/#with-transplant) automates these for convenience)
+1. [Create your project](create/): copy the template and clone your repository.
+2. [Choose features](features/): decide which service and update features to keep.
+3. [Cut and rename](cut/): remove unused features and set your project values.
+4. [Build and run](build/): develop and test locally.
+5. [Publish a release](release/): configure hosting and GitHub Actions, then ship.
+6. [Install and operate](operate/): install, configure, and update the released app.
 
-1. [Create your project](create/) - Use the GitHub template / setup your repo.
-2. [Choose features](features/) - Update behavior and service shape. Decide what you don't want.
-3. [Cut and rename](cut/) - Cut what you don't want and rename the go module.
+If you need to distribute approved releases from another host, follow
+[Run a mirror](mirror/).
 
-**Develop**
-
-4. [Build and run](build/) - Build, run, and test the app locally.
-
-**Release**
-
-5. [Publish](release/) - Create a Cloudflare R2 bucket, set repo secrets, create releases via changelog.
-6. [Install and operate](operate/) - What end-user usage looks like.
-7. [End-user mirror](mirror/) [*Optional*] - Skip unless you want to support end-user mirrors.
-
-## Outside these steps:
-
-- [How it be]({{% relref "docs/architecture" %}})
-- [Why it be]({{% relref "docs/philosophy" %}})
+See [Architecture]({{% relref "docs/architecture" %}}) when you need to change how
+the application works.

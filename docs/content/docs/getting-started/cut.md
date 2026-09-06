@@ -3,100 +3,42 @@ title: 3. Cut and rename
 weight: 3
 ---
 
-{{< callout type="important" >}}
-This manual flow is complete and supported. Run it once, before changing
-application code or deploying anything.
-{{< /callout >}}
+Run this once on your `setup` branch, before editing application code or deploying.
+Finalization removes the cutter itself.
 
-Three transformations, in this order: delete the features you don't want, put
-your name on what is left, and remove the machinery that did the deleting. Do
-them on the `setup` branch from [step 1]({{% relref "docs/getting-started/create" %}}),
-before you write any application code.
+## Preview
 
-## Preview the cut
-
-Pass every feature you decided against and the module path for your project in
-one command:
+Pass your new module path and all the features you want to remove:
 
 ```sh
 ./scripts/cut --module github.com/YOU/YOUR_APP service.https update
 ```
 
-By default it gives a preview and changes nothing. It prints the files it would delete
-outright, the fenced blocks it would remove, the markers it would strip, and the
-Go imports it would rename, after validating the marker structure and every
-behavior-bearing module reference in the repository. The preview includes the
-template-only cutter and matrix machinery, which never belongs in the finished
-application. If anything listed surprises you, there ya go.
+Review the listed deletions and import changes. Preview changes no files and
+needs no network access.
 
-The preview is not quite byte-for-byte. `--finalize` additionally runs
-`goimports` over the rewritten Go files, so imports left unreferenced by removed
-blocks disappear then rather than here. Finalization follows that pass with
-`go mod tidy` to remove module requirements the final source no longer uses. A
-tidy failure prints a warning but does not fail the cut; run it manually after
-resolving the reported problem. Finalizing may need network access on a machine
-that has neither `goimports` on `PATH` nor a copy in `tools/`, or whose module
-cache does not contain required dependencies. A `goimports` on `PATH` is reused
-only when its embedded module version matches the pin. Previewing never needs
-the tool or network.
+## Finalize
 
-## Make it
+Apply the same plan with `--finalize`:
 
 ```sh
 ./scripts/cut --finalize --module github.com/YOU/YOUR_APP service.https update
 ```
 
-`--finalize` applies the previewed plan. It removes all ownership
-comments and all template-only tooling. Keeping all five application features is
-a valid choice and still should be done, both to rename the module and to
-finish the template:
+To keep every feature, omit the feature names:
 
 ```sh
 ./scripts/cut --finalize --module github.com/YOU/YOUR_APP
 ```
 
-The cutter validates before it touches anything, deletes whole feature-owned
-files and fenced blocks, prunes directories those deletions leave empty,
-preserves file modes and line endings, formats changed Go, and writes through
-temporary files. It does not remove unrelated empty directories that existed
-before the cut. Retained files are rewritten before the cutter removes itself,
-then `goimports` prunes the imports those removals left unused, `go mod tidy`
-cleans the module files, and the cutter re-walks the tree to confirm no marker
-survived and every planned deletion happened. Dependency expansion is explicit in the preview: cutting a prerequisite also
-cuts every dependent feature. The resulting deletions do not uncomment fallback
-implementations or add missing imports.
+Finalization removes the selected code and setup tooling, renames imports, runs
+`goimports`, and runs `go mod tidy`. It may need network access to fetch tools
+or modules. If tidy reports a warning, resolve it and run `go mod tidy` again
+before continuing.
 
-And that's it, once the markers are gone there is no supported way to
-make another cut.
+## Set project values
 
-{{% details title="What the markers looked like" closed="true" %}}
-
-You will see these in the source until you finalize, and in a diff afterwards.
-A block marker means "this code belongs to this feature," and a file marker
-means the whole file does. The reserved `template` owner marks cutter and matrix
-machinery that every finalization removes:
-
-```go
-// --- BEGIN update.apply ---
-// optional code
-// --- END update.apply ---
-
-// --- FILE service.https ---
-
-// --- FILE template ---
-```
-
-Equivalent forms exist for shell/YAML and HTML. Code that needs two features
-uses nested fences, so cutting either one removes it. Whole-feature prerequisites
-live in `internal/cut/features.go`; for example, cutting `service` also removes
-`update.apply.auto`, even though their names are in different branches.
-
-{{% /details %}}
-
-## Set the project values
-
-The project block at the top of `scripts/build.sh` contains the values intended
-for normal setup:
+Edit the project block near the top of `scripts/build.sh`:
 
 ```sh
 APP_NAME="your-app"
@@ -105,48 +47,28 @@ CONTACT_URL="https://github.com/YOU/YOUR_APP"
 DEFAULT_LOG_LEVEL="warn"
 ```
 
-`APP_NAME` is the binary file name and the storage root (`~/.<APP_NAME>` on
-Linux, `%LOCALAPPDATA%\<APP_NAME>` on Windows), so it is the one your users
-actually see. `RELEASE_URL` must end in `/` and can
-stay a placeholder until [step 5]({{% relref "docs/getting-started/release" %}}).
-`CONTACT_URL` is your repository or landing page and is available for the
-application's User-Agent (currently unused). `DEFAULT_LOG_LEVEL` controls a
-fresh install.
+`APP_NAME` determines the installed binary name and storage directory.
+`RELEASE_URL` must end in `/`; it can remain a placeholder until
+[release setup]({{% relref "docs/getting-started/release" %}}).
+`DEFAULT_LOG_LEVEL` applies to new installations.
 
-If you kept the service, set `SERVICE_DESC` to something recognizable in a
-service listing. If you kept the dashboard, change `SERVICE_DEFAULT_PORT` if
-`8484` is not yours. Anything outside the project block is not meant to be
-modified by standard use.
+If you kept the service, set `SERVICE_DESC`. If you kept the dashboard, set
+`SERVICE_DEFAULT_PORT` (default `8484`). You can also replace the remaining
+Sprout branding in the README and UI.
 
-Everything else in the repository that says "sprout" is basically cosmetic,
-and you can change them if you want.
-
-## Verify
+## Verify and commit
 
 ```sh
 ./scripts/test.sh
 ./scripts/build.sh
 ```
 
-The first runs `go test -race ./...` against the tree you just created. The
-second builds a development binary and then checks the values that were baked
-into it, comparing the binary's own `--build-vars` output against `APP_NAME`,
-the version, and the rest. The package path is derived rather than copied, and
-this check still turns any malformed `-ldflags` value into an immediate
-`name mismatch` failure.
+Fix any errors before continuing. For an upstream issue, include the failing
+command, its output, your OS, architecture, and tool versions.
 
-Do not continue past an error here. All cut cases are tested upstream so it
-should work. If you happen to find an issue with Sprout, open an issue and
-gimme as much detail as possible. OS, arch, build tool versions, etc.
-
-## Commit the setup
-
-Finalization already removed the cutter, its eleven-tree upstream matrix, and
-the focused installer variants. Commit the finished tree as one reviewable
-change:
+Review the diff, then commit the setup:
 
 ```sh
-git add -A && git commit -m "Set up project from Sprout"
+git add -A
+git commit -m "Set up project from Sprout"
 ```
-
-You now own a normal Go repository.
