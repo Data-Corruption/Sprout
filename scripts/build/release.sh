@@ -549,7 +549,7 @@ make_installer_test_snapshot() {
 }
 
 test_changed_installers() {
-  [[ "${#RELEASE_INSTALLERS_TO_PUBLISH[@]}" -gt 0 ]] || return
+  [[ "${#RELEASE_INSTALLERS_TO_PUBLISH[@]}" -gt 0 ]] || return 0
 
   if [[ -n "$RELEASE_CURRENT_VERSION" && "$RELEASE_CURRENT_VERSION" != "$VERSION" ]]; then
     local current_snapshot="$OUT_DIR/lifecycle-e2e-current"
