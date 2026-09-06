@@ -313,6 +313,14 @@
   outline-offset: 3px;
 }
 
+.sp-platforms {
+  width: calc(100% - 3rem);
+  max-width: 62rem;
+  margin: 1.75rem auto 0;
+  line-height: 1.75;
+  text-align: center;
+}
+
 .sp-intro {
   width: calc(100% - 3rem);
   max-width: 64rem;

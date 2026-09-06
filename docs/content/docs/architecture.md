@@ -21,6 +21,55 @@ small set of dependencies. Linux and Windows share an installation protocol;
 platform-specific code handles paths, locks, and service management. Keeping
 that scope limited makes it practical to test the full lifecycle.
 
+## Platform support
+
+Development runs on Linux or WSL. Released applications run on Linux, WSL,
+and native Windows 11, on `amd64` and `arm64`. WSL uses the Linux installer
+and binaries; native Windows uses the PowerShell installer and scheduled tasks.
+
+macOS and BSD are outside the project's scope. Supporting them would mean
+additional service managers, installers, and lifecycle tests. Direct distribution
+on macOS also brings its own signing and distribution requirements. It's just too
+much for a solo project. This is the same reason Alpine and Void fallback to
+non-service installs.
+
+### Linux distro matrix
+
+Linux binaries are static. Managed service setup depends on a working
+`systemd --user` version 246 or newer. Without it, the installer skips service
+registration; the binary still works, and the worker can run with
+`<APP> service run` or a service definition you supply.
+
+The full E2E harness covers eight base distro images. Related distributions below
+are considered by the installer design, but are not each tested. These are runtime
+expectations; development still needs the tools in
+[Getting started]({{% relref "docs/getting-started" %}}#prerequisites).
+
+| Distributions | Service | Coverage |
+|---|---|---|
+| Debian, MX Linux, Raspberry Pi OS | User systemd where available | Debian E2E; derivatives considered. Non-systemd MX setups use the binary-only path. |
+| Ubuntu, Mint, Pop!_OS, Zorin | User systemd | Ubuntu E2E; derivatives considered. |
+| Fedora | User systemd | Fedora E2E. |
+| Rocky, AlmaLinux, RHEL | User systemd | Rocky E2E; AlmaLinux and RHEL considered. |
+| Arch, CachyOS, Manjaro, Omarchy | User systemd | Arch E2E; derivatives considered. |
+| SteamOS | User systemd in desktop mode | Considered; no dedicated E2E image. Installation stays in the user's home. |
+| Silverblue, Kinoite, Bazzite, Bluefin, Aurora | User systemd | Immutable-root dependency handling is simulated; no individual distro E2E. |
+| openSUSE Tumbleweed, Leap | User systemd | Tumbleweed E2E; Leap considered. |
+| MicroOS, Aeon, Kalpa | User systemd where available | Immutable-root handling considered; no individual distro E2E. |
+| Alpine | Foreground worker or your own OpenRC service | Alpine E2E with musl and BusyBox. |
+| Void | Foreground worker or your own runit service | Void E2E with glibc. |
+| NixOS | User systemd | Considered; outside the E2E matrix. Development uses `nix develop`. |
+| Artix, Devuan, Gentoo | Depends on the configured init system | Considered; no dedicated E2E image. Non-systemd setups use the binary-only path. |
+
+On detected immutable roots, missing-tool instructions point to Homebrew or
+distrobox/toolbox instead of modifying the host with `apt`, `dnf`, or `zypper`.
+The simulated immutable case checks those instructions, not a full installation
+on each immutable distribution.
+
+WSL follows its installed distro's row and needs a functioning user systemd
+manager for managed service operation. Native Windows has a separate installer
+harness in CI. See [Testing](#testing) for coverage and limits.
+
 ## Processes
 
 ```mermaid

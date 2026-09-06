@@ -49,6 +49,11 @@ width: full
   <li><a href="{{< relref "docs/architecture" >}}#dashboard">Dashboard</a>. HTTPS, users, perms, and sessions. Tailwind, DaisyUI, and esbuild pinned / fetched by the build script. npm-free</li>
 </ul>
 
+<p class="sp-platforms">
+  Develop on <strong>Linux or WSL</strong>. Run on <strong>Linux, WSL, or native Windows 11</strong>.<br>
+  amd64 and arm64. No macOS or BSD support. <a href="{{< relref "docs/architecture" >}}#platform-support">Platform details</a>
+</p>
+
 <hr class="sp-section-divider">
 
 ## Sprout and GoReleaser solve different problems
@@ -65,8 +70,8 @@ width: full
     Sprout on the other hand is an app starting point and operating model.
     Its release flow is coupled to the app so an update can stop running
     processes, replace the binary, authorize and apply migrations, and restart
-    safely. By coupling them and targeting just Windows / systemd based Linux
-    distros, you get extremely robust direct to user release and operation.
+    safely. By coupling them and targeting Linux and Windows, you get
+    extremely robust direct to user release and operation.
   </p>
   <ul class="sp-comparison__choices">
     <li>

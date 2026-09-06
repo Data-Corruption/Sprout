@@ -9,20 +9,20 @@ support link.
 
 ## Install
 
-Linux:
+Linux or WSL (run inside the Linux environment):
 
 ```sh
 curl -fsSL <RELEASE_URL>install.sh | sh
 ```
 
-Windows 11:
+Native Windows 11 (PowerShell):
 
 ```powershell
 irm <RELEASE_URL>install.ps1 | iex
 ```
 
-Install as your normal user; no elevation is needed. Releases support Linux
-and Windows 11 on `amd64` and `arm64`.
+Install as your normal user; no elevation is needed. Releases support Linux,
+WSL, and native Windows 11 on `amd64` and `arm64`.
 
 | Platform | Binary | Data | Service |
 |---|---|---|---|
@@ -31,8 +31,9 @@ and Windows 11 on `amd64` and `arm64`.
 
 On Linux, service setup requires a working `systemd --user` version 246 or newer.
 Without it, the installer installs the binary and reports that service setup was
-skipped. Run `<APP> service run` manually on those hosts. macOS and BSD are not
-supported.
+skipped. Run `<APP> service run` manually on those hosts. This also applies to
+WSL. See the [Linux distro matrix]({{% relref "docs/architecture" %}}#linux-distro-matrix)
+for tested and considered distributions. macOS and BSD are not supported.
 
 The Linux installer checks for required shell tools and installs a pinned Cosign
 if needed. Follow any PATH or missing-tool instructions it prints.
@@ -182,15 +183,30 @@ Removing a credential also revokes its active sessions.
 
 ### Use a reverse proxy
 
-Enable the loopback-only HTTP listener and point a TLS-terminating reverse
-proxy at it:
+This example uses Caddy on the same Linux host as the app. Install it using
+[Caddy's package instructions](https://caddyserver.com/docs/install), choosing a
+package with the `caddy` systemd service.
+
+Point your hostname's DNS records at this host and allow inbound TCP ports 80
+and 443 through the firewall and any router forwarding. Caddy uses those to
+serve HTTPS and obtain certificates. For a host that must stay private, see
+[Caddy's DNS challenge setup](https://caddyserver.com/docs/automatic-https#dns-challenge).
+
+Enable the app's loopback-only HTTP listener:
 
 ```sh
 <APP> config set --proxy-bind 127.0.0.1:8485
 <APP> service restart
 ```
 
-For example, with Caddy:
+Edit `/etc/caddy/Caddyfile`:
+
+```sh
+sudoedit /etc/caddy/Caddyfile
+```
+
+Add this site block, replacing `app.example.com` with your hostname. Keep any
+existing site blocks you still use:
 
 ```text
 app.example.com {
@@ -198,8 +214,23 @@ app.example.com {
 }
 ```
 
-A non-loopback proxy bind is rejected. The direct dashboard listener stays
-HTTPS regardless.
+Validate the config, enable Caddy at boot, and load the changes:
+
+```sh
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl enable --now caddy
+sudo systemctl reload caddy
+systemctl status caddy
+```
+
+Open `https://app.example.com` and log in with your app credential. Caddy obtains
+and renews the certificate automatically. After later edits, validate and reload
+again. If startup fails, check `journalctl -u caddy --no-pager`.
+See [Caddy's service guide](https://caddyserver.com/docs/running#using-the-service)
+for other service setups.
+
+The proxy listener remains loopback-only; the direct dashboard listener still
+uses its own HTTPS certificate.
 
 ## Update
 
