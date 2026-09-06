@@ -9,7 +9,7 @@ width: full
   <div class="sp-hero__content">
     <h1 id="sp-hero-title">Sprout</h1>
     <p>
-      Go template for per-user daemons with transactional, signed self-updates.<br>
+      Go template for CLIs and daemons with signed, transactional updates.<br>
       All the hard parts done for you, wired up, and ready to go.
     </p>
     <div class="sp-hero__actions">
