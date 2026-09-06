@@ -61,6 +61,41 @@ changelog_version=$(cd "$changelog_dir" && MODE=ci resolve_version && printf '%s
 [[ "$changelog_version" == "v1.4.2" ]] ||
   fail "release heading was not parsed into VERSION (got '$changelog_version')"
 
+# Exercise the real CI destination configuration without contacting R2.
+configured_remote() (
+  MODE=ci
+  RELEASE_URL="$1"
+  R2_BUCKET=release-bucket
+  R2_ACCESS_KEY_ID="test"
+  R2_SECRET_ACCESS_KEY="test"
+  R2_ACCOUNT_ID="test"
+  configure_distribution || return 1
+  printf '%s' "$PUBLISH_REMOTE"
+)
+[[ "$(configured_remote https://releases.example.com/)" == "r2:release-bucket" ]] ||
+  fail "root release URL changed the bucket destination"
+[[ "$(configured_remote https://releases.example.com/transplant/)" == "r2:release-bucket/transplant" ]] ||
+  fail "release URL subdirectory was not added to the bucket destination"
+[[ "$(configured_remote https://releases.example.com/apps/my-app_1.0~/)" == "r2:release-bucket/apps/my-app_1.0~" ]] ||
+  fail "nested release URL path was not preserved"
+for url in \
+  'https://releases.example.com' \
+  'https://releases.example.com/transplant' \
+  'https://releases.example.com//' \
+  'https://releases.example.com//transplant/' \
+  'https://releases.example.com/apps//transplant/' \
+  'https://releases.example.com/apps/../transplant/' \
+  'https://releases.example.com/./transplant/' \
+  'https://releases.example.com/%74ransplant/' \
+  'https://releases.example.com/transplant/?query=/' \
+  'https://releases.example.com/transplant/#fragment/' \
+  'https://user@releases.example.com/transplant/' \
+  'file:///transplant/'; do
+  if configured_remote "$url" >/dev/null 2>&1; then
+    fail "invalid publication URL was accepted: $url"
+  fi
+done
+
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/cosign" <<'EOF'
 #!/usr/bin/env bash
@@ -88,7 +123,16 @@ EOF
 chmod +x "$tmp/bin/cosign"
 PATH="$tmp/bin:$PATH"
 
-PUBLISH_REMOTE="$tmp/remote"
+# Run publication, recovery, and retention inside the configured URL prefix.
+# Root and sibling objects must survive every operation unchanged.
+remote=$(configured_remote https://releases.example.com/transplant/)
+PUBLISH_REMOTE="$tmp/remote/${remote#r2:release-bucket/}"
+mkdir -p "$tmp/remote/releases/v0.0.1" "$tmp/remote/.state/promotions" "$tmp/remote/sibling"
+printf 'root pointer\n' > "$tmp/remote/version"
+printf 'root release\n' > "$tmp/remote/releases/v0.0.1/version"
+printf 'root state\n' > "$tmp/remote/.state/promotions/v0.0.1"
+printf 'sibling pointer\n' > "$tmp/remote/sibling/version"
+cp -a "$tmp/remote" "$tmp/untouched"
 RCLONE_ARGS=()
 UPLOAD_ARGS=(--ignore-times)
 CERT_IDENTITY="test-identity"
@@ -244,5 +288,8 @@ git init -q "$tmp/git-work"
     fail "existing remote tag on the wrong commit was accepted"
   fi
 )
+
+rm -rf "$PUBLISH_REMOTE"
+diff -r "$tmp/untouched" "$tmp/remote" || fail "publication touched objects outside its URL prefix"
 
 printf 'All release publication tests passed.\n'

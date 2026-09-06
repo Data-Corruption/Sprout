@@ -68,6 +68,7 @@ SERVICE_DEFAULT_PORT="0" # fallback for after cut
 # implementation alone.
 
 APP_NAME="sprout"
+# The URL path is also the publication prefix inside R2_BUCKET. End with /.
 RELEASE_URL="https://releases.sproutcli.dev/"
 CONTACT_URL="https://sproutcli.dev/"
 DEFAULT_LOG_LEVEL="warn"

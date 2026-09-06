@@ -51,6 +51,12 @@ secrets listed below.
 {{% /details %}}
 
 Point `RELEASE_URL` at that domain in `scripts/build.sh`. It must end in `/`.
+An optional path becomes the object prefix inside `R2_BUCKET`: for example,
+`https://releases.sproutcli.dev/transplant/` publishes everything under
+`transplant/`. Keep `R2_BUCKET` as the bucket name alone. Nested paths work too;
+use letters, digits, `-`, `_`, `.`, or `~` in each path segment, with no empty,
+`.` or `..` segments, URL escapes, credentials, query, or fragment.
+
 It gets baked into the installers as their default. Each installation persists
 its effective source for later checks and updates, including an `APP_RELEASE_URL`
 override pointing at an approved mirror.
@@ -126,7 +132,11 @@ Commit the complete release and push it to `main`. CI runs the tests, then:
 7. moves the root `version` pointer;
 8. records the promotion, pushes the Git tag, then applies retention.
 
-The bucket ends up shaped like this:
+The release root ends up shaped like this, relative to `RELEASE_URL`. With a
+`/transplant/` URL path, this entire layout lives inside `transplant/` in the
+bucket; with `/`, it lives at the bucket root. Publication state (`.state/`),
+installer staging (`.staging/`), recovery, and retention use that same prefix
+and leave sibling prefixes alone:
 
 ```text
 install.sh

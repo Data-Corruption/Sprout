@@ -51,14 +51,37 @@ resolve_version() {
   fi
 }
 
+# Keep HTTP paths and object keys identical; reject paths clients might normalize
+# or decode differently instead of publishing into an unexpected namespace.
+release_url_prefix() {
+  local url="$1"
+  if [[ ! "$url" =~ ^https?://[^/@?#[:space:]]+/([A-Za-z0-9._~/-]*/)?$ ]]; then
+    printf 'error: RELEASE_URL must be an HTTP(S) URL ending in / with an unescaped path and no credentials, query, or fragment\n' >&2
+    return 1
+  fi
+  local path="${BASH_REMATCH[1]}"
+  local prefix="${path%/}"
+  case "/$prefix/" in
+    *'/./'*|*'/../'*|*'//'*)
+      if [[ -n "$path" ]]; then
+        printf 'error: RELEASE_URL path must not contain empty, . or .. segments\n' >&2
+        return 1
+      fi
+      ;;
+  esac
+  printf '%s' "$prefix"
+}
+
 configure_distribution() {
   if [[ "$MODE" == "ci" ]]; then
+    local prefix
+    prefix=$(release_url_prefix "$RELEASE_URL") || return 1
     export RCLONE_CONFIG_R2_TYPE=s3
     export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
     export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
     export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
     export RCLONE_CONFIG_R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-    PUBLISH_REMOTE="r2:$R2_BUCKET"
+    PUBLISH_REMOTE="r2:$R2_BUCKET${prefix:+/$prefix}"
     RCLONE_ARGS=(--s3-env-auth --s3-no-check-bucket)
     UPLOAD_ARGS=(--header-upload "$NO_CACHE" --ignore-times)
   fi
