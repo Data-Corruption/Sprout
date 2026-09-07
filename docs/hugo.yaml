@@ -1,7 +1,7 @@
 baseURL: https://sproutcli.dev/
 title: Sprout
 description: >-
-  Go template for CLIs and daemons with signed, transactional updates. Linux + Windows.
+  Template for Go CLIs and daemons with signed, transactional updates. Linux + Windows.
 
 enableRobotsTXT: true
 publishDir: out
@@ -38,7 +38,7 @@ menu:
 
 params:
   description: >-
-    Go template for CLIs and daemons with signed, transactional updates. Linux + Windows.
+    Template for Go CLIs and daemons with signed, transactional updates. Linux + Windows.
   # Site-wide social preview. Hextra's opengraph partial and Hugo's embedded
   # twitter_cards partial both fall back to the first entry when a page sets
   # no images of its own. Crawlers want JPEG/PNG at 1200x630, not AVIF.
