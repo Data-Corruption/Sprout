@@ -9,7 +9,7 @@ width: full
   <div class="sp-hero__content">
     <h1 id="sp-hero-title">Sprout</h1>
     <p>
-      Go template for CLIs and daemons with signed, transactional updates.<br>
+      Template for Go CLIs and daemons with signed, transactional updates.<br>
       All the hard parts done for you, wired up, and ready to go.
     </p>
     <div class="sp-hero__actions">
@@ -80,9 +80,9 @@ width: full
       box macOS support.
     </li>
     <li>
-      <strong>Choose Sprout</strong> when you are starting a CLI or daemon and
-      want its application, installation, service, state, and update lifecycle
-      designed together.
+      <strong>Choose Sprout</strong> when you're starting a CLI / daemon and
+      want to distribute direct to users on Linux and Windows, with the app,
+      service, state, and release pipeline designed together for elevated robustness.
     </li>
   </ul>
   <p class="sp-comparison__note">
