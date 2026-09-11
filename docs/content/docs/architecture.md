@@ -410,8 +410,8 @@ Every workflow starts with a gate requiring `CI_ENABLED=true`. Validation runs
 for pull requests targeting `main` and pushes to `main`:
 
 - `cut-matrix`: all feature combinations, upstream only.
-- `lifecycle-e2e`: Linux Go tests, shell lint, release tests, and a distro subset.
-- `windows-test`: native Go tests, representative cuts, PowerShell parsing,
+- `linux-e2e`: Linux Go tests, shell lint, release tests, and a distro subset.
+- `windows-e2e`: native Go tests, representative cuts, PowerShell parsing,
   and the installer harness.
 - `release`: push-only publication after validation; also provisions its own
   Incus daemon for candidate installer checks.

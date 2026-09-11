@@ -63,7 +63,7 @@ jobs:
   # windows build tags (pure Go, no C toolchain needed), and parses
   # install.ps1 with real Windows PowerShell 5.1 - the interpreter
   # `irm | iex` users actually run it with.
-  windows-test:
+  windows-e2e:
     needs: ci-gate
     if: ${{ needs.ci-gate.outputs.enabled == 'true' }}
     runs-on: windows-latest
@@ -239,7 +239,7 @@ jobs:
   # system containers for a representative distro subset (file:// release dir
   # + APP_SKIP_VERIFY).
   # Run ./scripts/test.sh -e2e locally for the full distro list.
-  lifecycle-e2e:
+  linux-e2e:
     needs: ci-gate
     if: ${{ needs.ci-gate.outputs.enabled == 'true' }}
     # Ubuntu 24.04 provides Incus 6.0 LTS. System containers share the runner
@@ -272,7 +272,7 @@ jobs:
         uses: ./.github/actions/setup-incus
 
       # The only Linux run of the Go suite that survives finalize: cut-matrix
-      # is template-only and windows-test covers Windows.
+      # is template-only and windows-e2e covers Windows.
       - name: Test Go packages
         run: ./scripts/test.sh
 
@@ -300,11 +300,11 @@ jobs:
     if: ${{ needs.ci-gate.outputs.enabled == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     needs:
       - ci-gate
-      - windows-test
+      - windows-e2e
       # --- BEGIN template ---
       - cut-matrix
       # --- END template ---
-      - lifecycle-e2e
+      - linux-e2e
     # Installer validation runs here too; jobs do not share the E2E daemon.
     runs-on: ubuntu-24.04
     timeout-minutes: 45
