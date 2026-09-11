@@ -1485,7 +1485,7 @@ try {
             "--certificate-oidc-issuer", $OidcIssuer,
             $checksumsPath
         ) -FailureMessage "Cosign verification of checksums.txt failed")
-        Write-Step "Verifying maintenance installer..."
+        Write-Step "Verifying installer..."
         [void](Invoke-NativeChecked -FilePath $cosign -Arguments @(
             "verify-blob",
             "--bundle", $installerBundlePath,

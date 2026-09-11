@@ -673,7 +673,7 @@ rollback() {
     # --- END update ---
     if [ "$cached_installer_changed" -eq 1 ]; then
         if ! restore_cached_installer; then
-            errf '   Error: Failed to restore cached maintenance installer'
+            errf '   Error: Failed to restore cached installer'
         else
             rb=1
         fi
@@ -914,8 +914,8 @@ printf 'Downloading release version ...\n'
 fetch -o "$version_out" "$release_ver_url" || { rc=$?; fatalf 'Download of release version failed (rc=%d)' "$rc"; }
 printf 'Downloading checksums ...\n'
 fetch -o "$checksums_out" "$checksums_url" || { rc=$?; fatalf 'Download of checksums failed (rc=%d)' "$rc"; }
-printf 'Downloading maintenance installer ...\n'
-fetch -o "$installer_out" "$installer_url" || { rc=$?; fatalf 'Download of maintenance installer failed (rc=%d)' "$rc"; }
+printf 'Downloading installer ...\n'
+fetch -o "$installer_out" "$installer_url" || { rc=$?; fatalf 'Download of installer failed (rc=%d)' "$rc"; }
 
 # ensure_cosign: use cosign from PATH if present, otherwise install the pinned
 # release into ~/.local/bin, verifying it against the sha256 baked in at
@@ -951,7 +951,7 @@ ensure_cosign() {
 }
 
 publish_cached_installer() {
-    printf 'Refreshing cached maintenance installer ...\n'
+    printf 'Refreshing cached installer ...\n'
     cached_installer_changed=1
     cached_bundle_tmp="$MAINTENANCE_DIR/.install.sh.cosign.bundle.$$.tmp"
     install -m 600 "$installer_bundle_out" "$cached_bundle_tmp" ||
@@ -962,12 +962,12 @@ publish_cached_installer() {
     }
     cached_installer_tmp="$MAINTENANCE_DIR/.install.sh.$$.tmp"
     install -m 700 "$installer_out" "$cached_installer_tmp" ||
-        fatalf 'Failed to stage cached maintenance installer'
+        fatalf 'Failed to stage cached installer'
     mv -f "$cached_installer_tmp" "$CACHED_INSTALLER" || {
         rm -f "$cached_installer_tmp"
-        fatalf 'Failed to publish cached maintenance installer'
+        fatalf 'Failed to publish cached installer'
     }
-    sync || fatalf 'Failed to durably publish cached maintenance installer'
+    sync || fatalf 'Failed to durably publish cached installer'
 }
 
 restore_cached_installer() {
@@ -1002,15 +1002,15 @@ else
     ensure_cosign
     printf 'Downloading checksums signature ...\n'
     fetch -o "$bundle_out" "$bundle_url" || { rc=$?; fatalf 'Download of checksums signature failed (rc=%d)' "$rc"; }
-    printf 'Downloading maintenance installer signature ...\n'
-    fetch -o "$installer_bundle_out" "$installer_bundle_url" || { rc=$?; fatalf 'Download of maintenance installer signature failed (rc=%d)' "$rc"; }
+    printf 'Downloading installer signature ...\n'
+    fetch -o "$installer_bundle_out" "$installer_bundle_url" || { rc=$?; fatalf 'Download of installer signature failed (rc=%d)' "$rc"; }
     printf 'Verifying checksums signature ...\n'
     cosign_out=$("$COSIGN_BIN" verify-blob \
         --bundle "$bundle_out" \
         --certificate-identity "$CERT_IDENTITY" \
         --certificate-oidc-issuer "$OIDC_ISSUER" \
         "$checksums_out" 2>&1) || fatalf 'Signature verification of checksums.txt failed:\n%s' "$cosign_out"
-    printf 'Verifying maintenance installer signature ...\n'
+    printf 'Verifying installer signature ...\n'
     cosign_out=$("$COSIGN_BIN" verify-blob \
         --bundle "$installer_bundle_out" \
         --certificate-identity "$CERT_IDENTITY" \
@@ -1087,16 +1087,16 @@ fi
 # --- END update ---
 
 if [ -L "$CACHED_INSTALLER" ] || [ -L "$CACHED_INSTALLER_BUNDLE" ]; then
-    fatalf 'Cached maintenance installer paths must not be symlinks'
+    fatalf 'Cached installer paths must not be symlinks'
 fi
 if { [ -e "$CACHED_INSTALLER" ] && [ ! -f "$CACHED_INSTALLER" ]; } ||
    { [ -e "$CACHED_INSTALLER_BUNDLE" ] && [ ! -f "$CACHED_INSTALLER_BUNDLE" ]; }; then
-    fatalf 'Cached maintenance installer paths must be regular files'
+    fatalf 'Cached installer paths must be regular files'
 fi
 if [ -f "$CACHED_INSTALLER" ]; then
     cached_installer_exists=1
     old_cached_installer="$temp_dir/install.sh.old"
-    cp -f "$CACHED_INSTALLER" "$old_cached_installer" || fatalf 'Failed to back up cached maintenance installer'
+    cp -f "$CACHED_INSTALLER" "$old_cached_installer" || fatalf 'Failed to back up cached installer'
 fi
 if [ -f "$CACHED_INSTALLER_BUNDLE" ]; then
     cached_bundle_exists=1
