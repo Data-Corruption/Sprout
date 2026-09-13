@@ -589,7 +589,7 @@ if [ "\${TEST_PORT:-0}" = "1" ]; then
   install -d -m 755 /tmp/occupied-bin
   cat > /tmp/occupied-bin/ss <<'PORT_EOF'
 #!/bin/sh
-printf '%s\n' 'LISTEN 0 128 127.0.0.1:8484'
+printf '%s\n' 'LISTEN 0 128 127.0.0.1:$SERVICE_DEFAULT_PORT'
 PORT_EOF
   chmod 755 /tmp/occupied-bin/ss
   if run_tester 'PATH=/tmp/occupied-bin:\$PATH APP_RELEASE_URL=file:///release/ APP_SKIP_VERIFY=true sh /release/install.sh' >/tmp/occupied-port.out 2>&1; then
@@ -604,12 +604,13 @@ installer_output=\$(run_tester 'APP_RELEASE_URL=file:///release/ APP_SKIP_VERIFY
 printf '%s\n' "\$installer_output"
 run_tester '"\$HOME/.local/bin/$APP_NAME" --version'
 build_vars=\$(run_tester '"\$HOME/.local/bin/$APP_NAME" --build-vars')
+printf 'Installed build settings: %s\n' "\$build_vars"
 printf '%s\n' "\$build_vars" | grep -q '"name":"$APP_NAME"'
 case "\${TEST_SCENARIO:-default}" in
   no-update)
     test ! -e "/home/tester/.$APP_NAME/maintenance/release-url"
     printf '%s\n' "\$build_vars" | grep -q '"serviceEnabled":true'
-    printf '%s\n' "\$build_vars" | grep -q '"serviceDefaultPort":8484'
+    printf '%s\n' "\$build_vars" | grep -Eq '"serviceDefaultPort":$SERVICE_DEFAULT_PORT([,}])'
     ;;
   no-service)
     printf '%s\n' "\$build_vars" | grep -q '"serviceEnabled":false'
@@ -622,7 +623,7 @@ case "\${TEST_SCENARIO:-default}" in
     ;;
   default)
     printf '%s\n' "\$build_vars" | grep -q '"serviceEnabled":true'
-    printf '%s\n' "\$build_vars" | grep -q '"serviceDefaultPort":8484'
+    printf '%s\n' "\$build_vars" | grep -Eq '"serviceDefaultPort":$SERVICE_DEFAULT_PORT([,}])'
     ;;
 esac
 if [ "\$managed_service" = "1" ]; then
