@@ -1237,7 +1237,7 @@ for distro in $DISTROS; do
 done
 
 # Immutable-root fake: on an ostree system with missing deps, the installer
-# must point at brew/distrobox instead of a nonexistent host package manager.
+# must suggest Homebrew only when available, otherwise the distro's host tooling.
 if ! $SKIP_FAKES; then
   echo ""
   echo "=============================================================="
@@ -1250,21 +1250,30 @@ if ! $SKIP_FAKES; then
   track_instance "$immutable_instance"
   immutable_ok=false
   if run_logged "$immutable_log" launch_instance "images:debian/trixie" "$immutable_instance"; then
+    # shellcheck disable=SC2016 # Expand variables inside the container shell.
     if run_logged "$immutable_log" "${INCUS[@]}" exec "$immutable_instance" -- sh -c '
         touch /run/ostree-booted
         rm -f /usr/local/bin/curl /usr/bin/curl /bin/curl
         useradd -m -s /bin/sh tester
-        su - tester -c "APP_RELEASE_URL=file:///release/ APP_SKIP_VERIFY=true sh /release/install.sh" 2>&1 || true
+        output=$(su - tester -c "APP_RELEASE_URL=file:///release/ APP_SKIP_VERIFY=true sh /release/install.sh" 2>&1) && exit 1
+        printf "%s\n" "$output"
+        printf "%s\n" "$output" | grep -q "supported method" || exit 1
+        printf "%s\n" "$output" | grep -q "package names may differ" || exit 1
+        if printf "%s\n" "$output" | grep -q "brew install"; then exit 1; fi
+        printf "#!/bin/sh\nexit 0\n" > /usr/local/bin/brew
+        chmod +x /usr/local/bin/brew
+        output=$(su - tester -c "APP_RELEASE_URL=file:///release/ APP_SKIP_VERIFY=true sh /release/install.sh" 2>&1) && exit 1
+        printf "%s\n" "$output"
+        printf "%s\n" "$output" | grep -q "brew install curl" || exit 1
+        printf "%s\n" "$output" | grep -q "package names may differ" || exit 1
       '; then
-      if grep -q 'brew install' "$immutable_log"; then
-        immutable_ok=true
-      fi
+      immutable_ok=true
     fi
   fi
   if $immutable_ok; then
     log_case_message "$immutable_log" ">> immutable-fake: PASS"
   else
-    log_case_message "$immutable_log" ">> immutable-fake: FAIL (expected brew hint in output)"
+    log_case_message "$immutable_log" ">> immutable-fake: FAIL (expected dependency guidance with and without brew)"
     run_logged "$immutable_log" show_instance_diagnostics "$immutable_instance" || :
     failed="$failed immutable-fake"
   fi

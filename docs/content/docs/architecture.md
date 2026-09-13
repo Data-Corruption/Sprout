@@ -61,8 +61,10 @@ expectations; development still needs the tools in
 | NixOS | User systemd | Considered; outside the E2E matrix. Development uses `nix develop`. |
 | Artix, Devuan, Gentoo | Depends on the configured init system | Considered; no dedicated E2E image. Non-systemd setups use the binary-only path. |
 
-On detected immutable roots, missing-tool instructions point to Homebrew or
-distrobox/toolbox instead of modifying the host with `apt`, `dnf`, or `zypper`.
+On detected immutable roots, missing-tool instructions point to Homebrew when
+`brew` is available. Otherwise, they direct users to their distribution's supported
+method for installing tools on the host. Both note that package names may differ
+from the missing command names.
 The simulated immutable case checks those instructions, not a full installation
 on each immutable distribution.
 

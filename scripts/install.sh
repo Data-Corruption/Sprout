@@ -743,8 +743,8 @@ if [ "$MODE" != "uninstall" ]; then
     esac
 fi
 
-# Immutable/image-based root detection: no usable host package manager, so
-# pointing the user at dnf/apt/zypper would be a dead end.
+# Immutable/image-based root detection: dependency installation must follow
+# the distribution's supported host tooling.
 #   - /run/ostree-booted: Fedora Silverblue/Kinoite, Bazzite, Bluefin, Aurora, SteamOS-likes
 #   - transactional-update: openSUSE MicroOS, Aeon, Kalpa
 is_immutable_root() {
@@ -765,7 +765,10 @@ if [ "$MODE" != "uninstall" ]; then
 fi
 if [ -n "$missing" ]; then
     if is_immutable_root; then
-        fatalf 'Missing required tools: %s\nThis looks like an immutable/image-based system. Install them into your home with:\n    brew install %s\nor use a distrobox/toolbox container.' "$missing" "$missing"
+        if command -v brew >/dev/null 2>&1; then
+            fatalf 'Missing required tools: %s\nThis looks like an immutable/image-based system. Install them with Homebrew:\n    brew install %s\nNote: package names may differ from the command names shown above.' "$missing" "$missing"
+        fi
+        fatalf "Missing required tools: %s\nInstall the missing tools on the host using your distribution's supported method.\nNote: package names may differ from command names." "$missing"
     fi
     fatalf 'Missing required tools: %s\nPlease install them and try again.' "$missing"
 fi
