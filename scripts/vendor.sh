@@ -40,10 +40,10 @@ DEFAULT_RCLONE_VERSION="v1.75.0"
 DEFAULT_SHELLCHECK_VERSION="v0.11.0"
 # --- BEGIN template ---
 DEFAULT_GOIMPORTS_VERSION="v0.49.0"
+# --- END template ---
 DEFAULT_HUGO_VERSION="0.164.0"
 # Floating majors would let a wrangler release change a deploy silently.
 DEFAULT_WRANGLER_VERSION="4.125.0"
-# --- END template ---
 
 ESBUILD_VERSION="${ESBUILD_VERSION:-$DEFAULT_ESBUILD_VERSION}"
 TAILWIND_VERSION="${TAILWIND_VERSION:-$DEFAULT_TAILWIND_VERSION}"
@@ -53,9 +53,9 @@ RCLONE_VERSION="${RCLONE_VERSION:-$DEFAULT_RCLONE_VERSION}"
 SHELLCHECK_VERSION="${SHELLCHECK_VERSION:-$DEFAULT_SHELLCHECK_VERSION}"
 # --- BEGIN template ---
 GOIMPORTS_VERSION="${GOIMPORTS_VERSION:-$DEFAULT_GOIMPORTS_VERSION}"
+# --- END template ---
 HUGO_VERSION="${HUGO_VERSION:-$DEFAULT_HUGO_VERSION}"
 WRANGLER_VERSION="${WRANGLER_VERSION:-$DEFAULT_WRANGLER_VERSION}"
-# --- END template ---
 
 # Hashes ----------------------------------------------------------------------
 #
@@ -74,9 +74,7 @@ COSIGN_SHA_WINDOWS_AMD64_OVERRIDE="${COSIGN_SHA_WINDOWS_AMD64:-}"
 RCLONE_SHA_LINUX_AMD64_OVERRIDE="${RCLONE_SHA_LINUX_AMD64:-}"
 SHELLCHECK_SHA_LINUX_AMD64_OVERRIDE="${SHELLCHECK_SHA_LINUX_AMD64:-}"
 SHELLCHECK_SHA_LINUX_ARM64_OVERRIDE="${SHELLCHECK_SHA_LINUX_ARM64:-}"
-# --- BEGIN template ---
 HUGO_SHA_LINUX_AMD64_OVERRIDE="${HUGO_SHA_LINUX_AMD64:-}"
-# --- END template ---
 
 TAILWIND_SHA_LINUX_AMD64="${TAILWIND_SHA_LINUX_AMD64:-5036c4fb4328e0bcdbb6065c70d8ac9452e0d4c947113a788a8f94fd390425c1}"
 TAILWIND_SHA_LINUX_ARM64="${TAILWIND_SHA_LINUX_ARM64:-394ddccc2402cfa3abd97dfba56f3587781a3d6e6ce66e65ceada14beb7664b8}"
@@ -88,11 +86,9 @@ COSIGN_SHA_WINDOWS_AMD64="${COSIGN_SHA_WINDOWS_AMD64:-9fe59be0eca1271873ce019061
 RCLONE_SHA_LINUX_AMD64="${RCLONE_SHA_LINUX_AMD64:-aa2804e08f48250e71009c727124b6341cd0288465804a9a09d14663cabafbaa}"
 SHELLCHECK_SHA_LINUX_AMD64="${SHELLCHECK_SHA_LINUX_AMD64:-b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6}"
 SHELLCHECK_SHA_LINUX_ARM64="${SHELLCHECK_SHA_LINUX_ARM64:-68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc}"
-# --- BEGIN template ---
 # The upstream Hugo checksums file ships from the same release as the archive,
 # so verifying against it would only catch transfer corruption.
 HUGO_SHA_LINUX_AMD64="${HUGO_SHA_LINUX_AMD64:-fea17b8c076f950bb2e9f9486667bdaa29422883888d509d63931c73e8a9b3a4}"
-# --- END template ---
 
 # Downloaded build tools (gitignored). Release-critical tools land here pinned
 # by version and hash; the `go install` ones are authenticated through the Go
@@ -109,8 +105,8 @@ VENDOR_DAISYUI=""
 VENDOR_COSIGN=""
 VENDOR_RCLONE=""
 VENDOR_SHELLCHECK=""
-# --- BEGIN template ---
 VENDOR_HUGO=""
+# --- BEGIN template ---
 VENDOR_GOIMPORTS=""
 # --- END template ---
 
@@ -121,9 +117,9 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
-VENDOR_FETCHABLE=(esbuild tailwind daisyui cosign rclone shellcheck)
+VENDOR_FETCHABLE=(esbuild tailwind daisyui cosign rclone shellcheck hugo)
 # --- BEGIN template ---
-VENDOR_FETCHABLE+=(hugo goimports)
+VENDOR_FETCHABLE+=(goimports)
 # --- END template ---
 
 # Pin validation --------------------------------------------------------------
@@ -156,10 +152,8 @@ validate_pins() {
     "$RCLONE_SHA_LINUX_AMD64_OVERRIDE"
   require_hash_overrides "shellcheck" "$SHELLCHECK_VERSION" "$DEFAULT_SHELLCHECK_VERSION" \
     "$SHELLCHECK_SHA_LINUX_AMD64_OVERRIDE" "$SHELLCHECK_SHA_LINUX_ARM64_OVERRIDE"
-  # --- BEGIN template ---
   require_hash_overrides "Hugo" "$HUGO_VERSION" "$DEFAULT_HUGO_VERSION" \
     "$HUGO_SHA_LINUX_AMD64_OVERRIDE"
-  # --- END template ---
 
   validate_sha256 "$TAILWIND_SHA_LINUX_AMD64" "TAILWIND_SHA_LINUX_AMD64"
   validate_sha256 "$TAILWIND_SHA_LINUX_ARM64" "TAILWIND_SHA_LINUX_ARM64"
@@ -171,9 +165,7 @@ validate_pins() {
   validate_sha256 "$RCLONE_SHA_LINUX_AMD64" "RCLONE_SHA_LINUX_AMD64"
   validate_sha256 "$SHELLCHECK_SHA_LINUX_AMD64" "SHELLCHECK_SHA_LINUX_AMD64"
   validate_sha256 "$SHELLCHECK_SHA_LINUX_ARM64" "SHELLCHECK_SHA_LINUX_ARM64"
-  # --- BEGIN template ---
   validate_sha256 "$HUGO_SHA_LINUX_AMD64" "HUGO_SHA_LINUX_AMD64"
-  # --- END template ---
 }
 
 # Fetchers --------------------------------------------------------------------
@@ -329,7 +321,6 @@ vendor_shellcheck() {
   printf '🟢 Vendored shellcheck %s\n' "$SHELLCHECK_VERSION"
 }
 
-# --- BEGIN template ---
 vendor_hugo() {
   vendor_require_amd64 Hugo
   vendor_require_bins tar install
@@ -347,6 +338,7 @@ vendor_hugo() {
   printf '🟢 Vendored Hugo %s\n' "$HUGO_VERSION"
 }
 
+# --- BEGIN template ---
 vendor_goimports() {
   local candidate installed
   if [[ "$VENDOR_REFETCH" != "true" ]] && candidate=$(command -v goimports 2>/dev/null); then
@@ -373,8 +365,8 @@ vendor_ensure() {
     cosign) vendor_cosign ;;
     rclone) vendor_rclone ;;
     shellcheck) vendor_shellcheck ;;
-    # --- BEGIN template ---
     hugo) vendor_hugo ;;
+    # --- BEGIN template ---
     goimports) vendor_goimports ;;
     # --- END template ---
     *)
@@ -393,8 +385,8 @@ vendor_resolved() {
     cosign) printf '%s' "$VENDOR_COSIGN" ;;
     rclone) printf '%s' "$VENDOR_RCLONE" ;;
     shellcheck) printf '%s' "$VENDOR_SHELLCHECK" ;;
-    # --- BEGIN template ---
     hugo) printf '%s' "$VENDOR_HUGO" ;;
+    # --- BEGIN template ---
     goimports) printf '%s' "$VENDOR_GOIMPORTS" ;;
     # --- END template ---
   esac
