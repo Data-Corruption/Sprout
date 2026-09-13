@@ -102,6 +102,56 @@ case "$TEST_EXAMPLE_HASH" in
   *) echo "error: TEST_EXAMPLE_HASH must be 'true' or 'false'" >&2; exit 1 ;;
 esac
 
+requested_release_dir="$RELEASE_DIR"
+# shellcheck source=test/lifecycle-results.sh
+source scripts/test/lifecycle-results.sh
+if [[ -n "${SPROUT_LIFECYCLE_E2E_LOG_RUN_DIR:-}" ]]; then
+  # Focused child harnesses inherit the top-level run directory so their logs
+  # survive removal of the temporary finalized source tree.
+  RUN_LOG_DIR="$SPROUT_LIFECYCLE_E2E_LOG_RUN_DIR"
+else
+  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$SCENARIO-$$-$RANDOM"
+  RUN_LOG_DIR="$PWD/out/lifecycle-e2e-logs/$RUN_ID"
+fi
+mkdir -p "$RUN_LOG_DIR"
+RUN_LOG_DIR=$(cd "$RUN_LOG_DIR" && pwd)
+SPROUT_LIFECYCLE_E2E_LOG_RUN_DIR="$RUN_LOG_DIR"
+export SPROUT_LIFECYCLE_E2E_LOG_RUN_DIR
+echo ">> Lifecycle E2E logs: $RUN_LOG_DIR"
+
+lifecycle_results_init "$RUN_LOG_DIR"
+for distro in $DISTROS; do
+  lifecycle_result "$SCENARIO" "$distro" 'NOT RUN'
+done
+if ! $SKIP_FAKES; then
+  lifecycle_result "$SCENARIO" immutable-fake 'NOT RUN'
+fi
+# --- BEGIN template ---
+if [[ -z "$requested_release_dir" && "$SCENARIO" == default ]]; then
+  for scenario in no-update no-service headless; do
+    lifecycle_result "$scenario" debian 'NOT RUN'
+  done
+fi
+# --- END template ---
+
+# Later setup stages replace this with cleanup for the resources they own.
+# shellcheck disable=SC2329 # The EXIT handler uses this before resource setup.
+cleanup() { :; }
+finish_lifecycle_run() {
+  local status=$? cleanup_status=0 report_status=0
+  trap - EXIT
+  cleanup || cleanup_status=$?
+  [[ "$status" -ne 0 ]] || status=$cleanup_status
+  if $LIFECYCLE_RESULTS_OWNER; then
+    lifecycle_results_summary "$status" "$RUN_LOG_DIR" | tee "$RUN_LOG_DIR/summary.txt" || report_status=$?
+    [[ "$status" -ne 0 ]] || status=$report_status
+  fi
+  exit "$status"
+}
+trap finish_lifecycle_run EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 command -v incus >/dev/null 2>&1 || { echo "error: incus is required" >&2; exit 1; }
 
 INCUS=(incus)
@@ -126,7 +176,6 @@ else
 fi
 
 # Source the build configuration and shared renderer without running its main.
-requested_release_dir="$RELEASE_DIR"
 # shellcheck source=build.sh
 source scripts/build.sh
 RELEASE_DIR="$requested_release_dir"
@@ -229,10 +278,10 @@ echo ">> Using release dir: $RELEASE_DIR"
 # In-container test script ----------------------------------------------------
 
 HARNESS_DIR=$(mktemp -d)
-cleanup_harness_setup() {
+# shellcheck disable=SC2329 # The EXIT handler uses this during harness setup.
+cleanup() {
   [[ -z "${HARNESS_DIR:-}" ]] || rm -rf "$HARNESS_DIR"
 }
-trap cleanup_harness_setup EXIT
 CONTAINER_TEST="$HARNESS_DIR/container-test.sh"
 PIN_CURL="$HARNESS_DIR/pin-curl"
 # Give every run an immutable mount source of its own. Besides making private
@@ -245,19 +294,6 @@ chmod -R a+rX,go-w "$STAGED_RELEASE_DIR"
 RELEASE_DIR="$STAGED_RELEASE_DIR"
 
 RUN_TOKEN="$(date +%s)-$$-$RANDOM"
-if [[ -n "${SPROUT_LIFECYCLE_E2E_LOG_RUN_DIR:-}" ]]; then
-  # Focused child harnesses inherit the top-level run directory so their logs
-  # survive removal of the temporary finalized source tree.
-  RUN_LOG_DIR="$SPROUT_LIFECYCLE_E2E_LOG_RUN_DIR"
-else
-  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$SCENARIO-$$-$RANDOM"
-  RUN_LOG_DIR="$PWD/out/lifecycle-e2e-logs/$RUN_ID"
-fi
-mkdir -p "$RUN_LOG_DIR"
-RUN_LOG_DIR=$(cd "$RUN_LOG_DIR" && pwd)
-SPROUT_LIFECYCLE_E2E_LOG_RUN_DIR="$RUN_LOG_DIR"
-export SPROUT_LIFECYCLE_E2E_LOG_RUN_DIR
-echo ">> Lifecycle E2E logs: $RUN_LOG_DIR"
 
 ACTIVE_INSTANCES=()
 declare -A ACTIVE_INSTANCE_SET=()
@@ -348,13 +384,13 @@ retain_owned_instance() {
 }
 
 cleanup() {
-  local preserve_harness=false
+  local preserve_harness=false cleanup_status=0
   for instance in "${ACTIVE_INSTANCES[@]}"; do
     [[ "${ACTIVE_INSTANCE_SET[$instance]:-}" == "1" ]] || continue
     if $KEEP_FAILED; then
-      retain_owned_instance "$instance" || :
+      retain_owned_instance "$instance" || cleanup_status=1
     else
-      delete_owned_instance "$instance" >/dev/null 2>&1 || :
+      delete_owned_instance "$instance" >/dev/null 2>&1 || cleanup_status=1
     fi
   done
   if (( ${#RETAINED_INSTANCES[@]} > 0 )); then
@@ -369,7 +405,7 @@ cleanup() {
     fi
   done
   if ! $preserve_harness; then
-    rm -rf "$HARNESS_DIR"
+    rm -rf "$HARNESS_DIR" || cleanup_status=1
   elif (( ${#RETAINED_INSTANCES[@]} > 0 )); then
     echo ">> Retained ${#RETAINED_INSTANCES[@]} failed Incus instance(s)." >&2
     echo ">> Remove their harness files after deleting the instances: $HARNESS_DIR" >&2
@@ -377,10 +413,10 @@ cleanup() {
     echo ">> Preserved harness files: $HARNESS_DIR" >&2
   fi
   # --- BEGIN template ---
-  [[ -z "$FOCUSED_ROOT" ]] || rm -rf "$FOCUSED_ROOT"
+  [[ -z "$FOCUSED_ROOT" ]] || rm -rf "$FOCUSED_ROOT" || cleanup_status=1
   # --- END template ---
+  return "$cleanup_status"
 }
-trap cleanup EXIT
 cat > "$PIN_CURL" <<'EOF'
 #!/bin/sh
 set -eu
@@ -1194,6 +1230,7 @@ for distro in $DISTROS; do
   log_file="$RUN_LOG_DIR/$SCENARIO-$distro.log"
   : > "$log_file"
   log_case_message "$log_file" "scenario=$SCENARIO distro=$distro image=$image instance=$instance"
+  lifecycle_result "$SCENARIO" "$distro" INCOMPLETE
   track_instance "$instance"
   distro_ok=false
   if run_logged "$log_file" launch_instance "$image" "$instance" &&
@@ -1225,15 +1262,22 @@ for distro in $DISTROS; do
         log_case_message "$log_file" ">> No failed instance was created to retain."
         ;;
       *)
+        distro_ok=false
         failed="$failed $SCENARIO/$distro-retain"
         ;;
     esac
   else
     if ! delete_instance "$instance"; then
+      distro_ok=false
       log_case_message "$log_file" ">> $SCENARIO/$distro: FAIL (instance cleanup)"
       run_logged "$log_file" show_instance_diagnostics "$instance" || :
       failed="$failed $SCENARIO/$distro-cleanup"
     fi
+  fi
+  if $distro_ok; then
+    lifecycle_result "$SCENARIO" "$distro" PASS
+  else
+    lifecycle_result "$SCENARIO" "$distro" FAIL
   fi
 done
 
@@ -1248,6 +1292,7 @@ if ! $SKIP_FAKES; then
   immutable_log="$RUN_LOG_DIR/$SCENARIO-immutable-fake.log"
   : > "$immutable_log"
   log_case_message "$immutable_log" "scenario=$SCENARIO case=immutable-fake image=images:debian/trixie instance=$immutable_instance"
+  lifecycle_result "$SCENARIO" immutable-fake INCOMPLETE
   track_instance "$immutable_instance"
   immutable_ok=false
   if run_logged "$immutable_log" launch_instance "images:debian/trixie" "$immutable_instance"; then
@@ -1289,15 +1334,22 @@ if ! $SKIP_FAKES; then
         log_case_message "$immutable_log" ">> No failed instance was created to retain."
         ;;
       *)
+        immutable_ok=false
         failed="$failed immutable-fake-retain"
         ;;
     esac
   else
     if ! delete_instance "$immutable_instance"; then
+      immutable_ok=false
       log_case_message "$immutable_log" ">> immutable-fake: FAIL (instance cleanup)"
       run_logged "$immutable_log" show_instance_diagnostics "$immutable_instance" || :
       failed="$failed immutable-fake-cleanup"
     fi
+  fi
+  if $immutable_ok; then
+    lifecycle_result "$SCENARIO" immutable-fake PASS
+  else
+    lifecycle_result "$SCENARIO" immutable-fake FAIL
   fi
 fi
 
@@ -1321,6 +1373,7 @@ if [[ -z "$requested_release_dir" && "$SCENARIO" == "default" ]]; then
     name=${focused_names[$i]}
     cuts=${focused_cuts[$i]}
     source_dir="$FOCUSED_ROOT/$name"
+    lifecycle_result "$name" debian INCOMPLETE
     mkdir -p "$source_dir"
     tar \
       --exclude='./.git' \
@@ -1343,6 +1396,7 @@ if [[ -z "$requested_release_dir" && "$SCENARIO" == "default" ]]; then
         --distros "debian" \
         --no-fakes
     ); then
+      lifecycle_result "$name" debian FAIL
       echo "error: focused installer $name failed (cut args: $cuts)" >&2
       echo "retained source: $source_dir" >&2
       FOCUSED_ROOT=""
@@ -1353,6 +1407,3 @@ if [[ -z "$requested_release_dir" && "$SCENARIO" == "default" ]]; then
   FOCUSED_ROOT=""
 fi
 # --- END template ---
-
-printf 'All lifecycle E2E tests passed (scenario: %s; distros: %s).\n' \
-  "$SCENARIO" "$DISTROS"

@@ -85,7 +85,7 @@ run_go_tests() {
   go test -race ./...
 }
 
-# Entry points only; -x follows every `source` (scripts/build/*.sh) so the
+# Entry points only; -x follows the build and CI libraries through `source` so the
 # libraries are checked in the context that defines their variables.
 run_shell_lint() {
   local shellcheck_bin
@@ -96,6 +96,7 @@ run_shell_lint() {
   fi
   local scripts=(
     scripts/build.sh
+    scripts/ci.sh
     scripts/vendor.sh
     scripts/test.sh
     scripts/test-release.sh

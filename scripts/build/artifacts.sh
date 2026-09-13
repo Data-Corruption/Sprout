@@ -234,8 +234,3 @@ generate_checksums() {
   )
   printf "🟢 Generated checksums.txt\n"
 }
-
-sign_application_release() {
-  run_step "Signed checksums.txt" "Failed to sign checksums.txt" \
-    "$COSIGN_BIN" sign-blob --yes --bundle "$VERSION_DIR/checksums.txt.cosign.bundle" "$VERSION_DIR/checksums.txt"
-}

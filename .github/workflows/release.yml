@@ -1,9 +1,12 @@
 name: Release
 
-# On push to main, scripts/build.sh (CI mode) builds/refreshes the release
-# artifact set. It verifies/uploads an immutable releases/<version> prefix,
-# promotes the root version pointer, and pushes the Git tag last. Installers
-# are signed and replaced independently only when their rendered bytes change.
+# On pushes to main, ci.sh --plan checks which tests are needed. After those
+# tests pass, ci.sh --execute publishes the release or finishes an interrupted
+# attempt. PRs always run validation and never publish.
+#
+# A version that already has a Git tag skips the broad test suites. Changed
+# installers still get tested before publication. Retrying an older release
+# after a newer one went live only finishes the older tag and cleanup.
 #
 # CI is opt-in for fresh template forks. A tiny gate job reports when the
 # CI_ENABLED repository variable is absent or false; every build, test, and
@@ -59,13 +62,57 @@ jobs:
             echo "::notice::CI is disabled. Set the CI_ENABLED repository variable to true to run validation and releases."
           fi
 
+  release-plan:
+    needs: ci-gate
+    if: ${{ needs.ci-gate.outputs.enabled == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      e2e_required: ${{ steps.plan.outputs.e2e_required }}
+      installer_tests_required: ${{ steps.plan.outputs.installer_tests_required }}
+    steps:
+      - name: Checkout
+        if: ${{ github.event_name == 'push' }}
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install pinned rclone
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          set -euo pipefail
+          rclone_bin=$(./scripts/vendor.sh rclone | sed -n 's/^rclone=//p')
+          [[ -n "$rclone_bin" && -x "$rclone_bin" ]] || {
+            echo "vendor.sh returned no executable rclone path" >&2
+            exit 1
+          }
+          dirname "$rclone_bin" >> "$GITHUB_PATH"
+
+      - name: Plan validation without publishing
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          VERBOSE: ${{ vars.VERBOSE }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            # PRs need neither release credentials nor a changelog heading.
+            echo "e2e_required=true" >> "$GITHUB_OUTPUT"
+            echo "installer_tests_required=false" >> "$GITHUB_OUTPUT"
+          else
+            ./scripts/ci.sh --plan
+          fi
+
   # Native Windows coverage: compiles and runs the Go test suite with the
   # windows build tags (pure Go, no C toolchain needed), and parses
   # install.ps1 with real Windows PowerShell 5.1 - the interpreter
   # `irm | iex` users actually run it with.
   windows-e2e:
-    needs: ci-gate
-    if: ${{ needs.ci-gate.outputs.enabled == 'true' }}
+    needs: release-plan
+    if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
     runs-on: windows-latest
     timeout-minutes: 30
     permissions:
@@ -203,8 +250,8 @@ jobs:
       - name: Render exact Windows release candidate
         shell: bash
         run: |
-          source scripts/build.sh
-          detect_mode
+          source scripts/ci.sh
+          configure_release_identity
           RELEASE_DIR=out/windows-installer-candidate
           package_installers
 
@@ -216,8 +263,8 @@ jobs:
   # Validate all 11 supported update/service source variants in isolated
   # temporary copies, including shell lint, surviving installer syntax, and frontend states.
   cut-matrix:
-    needs: ci-gate
-    if: ${{ needs.ci-gate.outputs.enabled == 'true' }}
+    needs: release-plan
+    if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -240,8 +287,8 @@ jobs:
   # + APP_SKIP_VERIFY).
   # Run ./scripts/test.sh -e2e locally for the full distro list.
   linux-e2e:
-    needs: ci-gate
-    if: ${{ needs.ci-gate.outputs.enabled == 'true' }}
+    needs: release-plan
+    if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
     # Ubuntu 24.04 provides Incus 6.0 LTS. System containers share the runner
     # kernel, so this does not require nested virtualization or /dev/kvm.
     runs-on: ubuntu-24.04
@@ -297,9 +344,26 @@ jobs:
   release:
     # Pull requests never publish. Template forks must also opt in explicitly
     # by setting CI_ENABLED=true after R2 secrets are configured.
-    if: ${{ needs.ci-gate.outputs.enabled == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    # A status function permits intentionally skipped dependencies. Required
+    # tests must all succeed; missing plan outputs, failures, and cancellation
+    # must never open the publication gate.
+    if: >-
+      ${{ !cancelled() &&
+          github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+          needs.ci-gate.outputs.enabled == 'true' &&
+          needs.release-plan.result == 'success' &&
+          ((needs.release-plan.outputs.e2e_required == 'true' &&
+            !contains(needs.*.result, 'skipped') &&
+            needs.windows-e2e.result == 'success' &&
+            needs.linux-e2e.result == 'success') ||
+           (needs.release-plan.outputs.e2e_required == 'false' &&
+            needs.windows-e2e.result == 'skipped' &&
+            needs.linux-e2e.result == 'skipped')) &&
+          !contains(needs.*.result, 'failure') &&
+          !contains(needs.*.result, 'cancelled') }}
     needs:
       - ci-gate
+      - release-plan
       - windows-e2e
       # --- BEGIN template ---
       - cut-matrix
@@ -309,20 +373,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
-      contents: write # build.sh pushes the release tag
+      contents: write # ci.sh pushes the release tag
       id-token: write # cosign keyless signing
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          fetch-depth: 0 # full history + tags: build.sh checks/pushes release tags
+          fetch-depth: 0 # full history + tags: ci.sh checks/pushes release tags
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
 
-      # cosign is not installed here: build.sh vendors the pinned release
+      # cosign is not installed here: ci.sh vendors the pinned release
       # itself, so CI signs with exactly the binary install.sh bootstraps.
       - name: Install pinned rclone
         run: |
@@ -336,6 +400,7 @@ jobs:
           "$rclone_bin" version
 
       - name: Set up Incus
+        if: ${{ needs.release-plan.outputs.installer_tests_required == 'true' }}
         uses: ./.github/actions/setup-incus
 
       - name: Build, sign, and release
@@ -345,4 +410,4 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: bash scripts/build.sh --prod-all
+        run: ./scripts/ci.sh --execute

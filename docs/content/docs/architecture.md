@@ -290,13 +290,50 @@ must be verified and run separately.
 
 ## Releases
 
-`scripts/build.sh` owns project values and the build phase order. Modules under
-`scripts/build/` handle local artifacts and publication. GitHub Actions selects
-the candidate version from `CHANGELOG.md` on pushes to `main`.
+`scripts/build.sh` builds binaries on your machine. It also holds the project
+settings used by both local builds and releases.
 
-Objects are relative to `RELEASE_URL`. A URL path becomes the publication prefix
-inside the bucket, including `.state/` and `.staging/`; sibling prefixes are left
-alone.
+`scripts/ci.sh` runs the release process in GitHub Actions. It has two commands:
+
+```sh
+./scripts/ci.sh --plan     # check which tests to run
+./scripts/ci.sh --execute  # publish a release or finish an interrupted attempt
+```
+
+The workflow runs `--plan`, waits for the tests it requests, and then runs
+`--execute`. These commands need the repository identity and R2 credentials
+configured in [Publish a release]({{% relref "docs/getting-started/release" %}}).
+The detailed upload and recovery code lives under `scripts/ci/`.
+
+### Deciding which tests to run
+
+The plan reads the newest version heading in `CHANGELOG.md` and checks the
+release host and Git tag. It verifies any existing release files using their
+signatures and checksums.
+
+- If the version has no Git tag yet, run the Linux and Windows E2E jobs and,
+  in the upstream template, the feature-cut matrix. Files left by an interrupted
+  upload do not count as a completed release.
+- If the version is already tagged, skip those jobs. The publisher checks
+  for installer changes and tests changed installers before replacing them.
+
+For a retry, consider this example: v1.0.0 became available to users, but its
+workflow failed to push the Git tag. You then published v1.1.0. Retrying the
+v1.0.0 workflow skips E2E, pushes the missing v1.0.0 tag, and runs the usual
+old-release cleanup. The release host continues offering v1.1.0 to users.
+
+Pull requests always run validation. They do not contact the release host or
+need its credentials.
+
+### Publishing files
+
+Each version has its own directory on the release host. Once a complete release
+has been uploaded and verified, its files are never replaced. The root `version`
+file tells installers which version to download. Root installer scripts can be
+updated separately from the application binaries.
+
+Paths below are relative to `RELEASE_URL`. If that URL includes a path such as
+`/my-app/`, all publication and cleanup stay inside that path in the bucket.
 
 ```text
 install.sh
@@ -317,21 +354,28 @@ releases/
 
 Publication proceeds in this order:
 
-1. Build and sign a candidate, or reuse an already verified one.
-2. Upload the immutable `releases/<version>/` prefix and verify its remote bytes.
-3. Render root installers. Test changed installers against the candidate and
-   any current release, then sign and publish them.
-4. Replace the root `version` pointer, making the release public.
-5. Record promotion, push the Git tag, and apply retention.
+1. Build, package, and sign the application, unless verified files for this
+   version are already on the release host.
+2. Upload the files to `releases/<version>/` and check their signatures and
+   checksums after downloading them again.
+3. Generate the installer scripts from the project settings. Test changed
+   installers against both the new version and the version currently offered
+   to users, then sign and upload them.
+4. Update the root `version` file to make the new release available to installers.
+5. Save the release commit and publication time, push the Git tag, and remove
+   old releases according to the rules below.
 
-Each installer bundle is published before its script; the script is the pair's
-commit point. A temporary mismatch fails verification. Verified staging allows
-an interrupted pair replacement to resume. Unchanged installers are left alone.
+An installer's signature bundle is uploaded before its script. While those two
+files are being replaced, a download can briefly contain a mismatched pair;
+verification rejects it. The publisher keeps verified temporary copies so a
+retry can finish replacing the pair. Unchanged installers keep their existing
+signatures.
 
-Installers read the root pointer once and use that release for their entire run.
-A fresh runner can inspect signed remote state and resume publication. It rejects
-invalid complete prefixes, incomplete promoted releases, unexplained installer
-pairs, backward promotion, and tags pointing to another commit.
+Installers read the root `version` file once and use that version throughout
+installation. A retry can use a fresh runner: it downloads and verifies the
+release files to find out which steps are complete. It stops on damaged files
+or conflicting release records instead of overwriting them. It also refuses to
+move an existing tag or make an older version current again.
 
 The publisher keeps the two newest promoted releases and any older release
 until at least 24 hours after its promotion. More than two may therefore remain
@@ -393,6 +437,10 @@ exercise binary-only installation. Probes cover service state, the hash worker,
 HTTPS health, restart, reinstall, migration failure, and recovery. Containers
 share the host kernel.
 
+In the upstream template, the default run also tests `no-update`, `no-service`,
+and `headless` source variants on Debian. Finalized forks test their retained
+features. Runs using `--release-dir` test the supplied release files.
+
 Per-case logs remain under `out/lifecycle-e2e-logs/<run>/`. `KEEP_FAILED=true`
 retains failed containers and backing directories for inspection. Windows CI
 runs the native Go suite and a PowerShell installer harness covering upgrades,
@@ -408,15 +456,21 @@ for test commands and Incus setup.
 
 ### CI jobs
 
-Every workflow starts with a gate requiring `CI_ENABLED=true`. Validation runs
-for pull requests targeting `main` and pushes to `main`:
+Set the repository variable `CI_ENABLED=true` to enable the workflow. Until
+then, only the small `ci-gate` job runs.
 
-- `cut-matrix`: all feature combinations, upstream only.
-- `linux-e2e`: Linux Go tests, shell lint, release tests, and a distro subset.
-- `windows-e2e`: native Go tests, representative cuts, PowerShell parsing,
-  and the installer harness.
-- `release`: push-only publication after validation; also provisions its own
-  Incus daemon for candidate installer checks.
+| Job | What it does |
+|---|---|
+| `release-plan` | Runs `ci.sh --plan` on pushes to `main`. For PRs, enables validation without checking the release host. |
+| `cut-matrix` | Tests every supported feature combination. Present only in the upstream template. |
+| `linux-e2e` | Runs Linux Go tests, shell lint, release tests, and installer tests on several distributions. |
+| `windows-e2e` | Runs native Go tests, representative feature cuts, PowerShell parsing, and Windows installer tests. |
+| `release` | Runs `ci.sh --execute` on pushes to `main`, after all requested tests pass. Sets up Incus only if installers need testing. |
+
+The three validation jobs follow the rules in [Deciding which tests to
+run](#deciding-which-tests-to-run). A failed plan, failed test, or cancellation
+blocks publication. Tests skipped at the plan's request allow publication to
+continue.
 
 ## Code map
 
@@ -433,7 +487,8 @@ for pull requests targeting `main` and pushes to `main`:
 | `internal/ui` | Templates and frontend source |
 | `internal/build` | Values compiled into the binary |
 | `pkg` | Shared utilities: locks, logs, HTTP, crypto, prompts, systemd notification |
-| `scripts/build.sh`, `scripts/build/` | Local builds and release publication |
+| `scripts/build.sh`, `scripts/build/` | Project settings, local builds, and shared artifact helpers |
+| `scripts/ci.sh`, `scripts/ci/` | Release planning, publication, and recovery |
 | `scripts/vendor.sh` | Pinned tools and downloads |
 | `scripts/test.sh`, `scripts/test-*` | Test entrypoints and harnesses |
 | `scripts/install.sh`, `scripts/install.ps1` | Installation, update, uninstall, recovery |

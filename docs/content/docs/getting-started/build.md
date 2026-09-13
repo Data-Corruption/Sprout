@@ -87,6 +87,12 @@ Run these when changing the installation or publication machinery:
 ./scripts/test.sh -e2e      # installation lifecycle; requires Incus
 ```
 
+The E2E command ends with a table of results for each scenario and distribution,
+including extra checks such as immutable-system dependency guidance. `NOT RUN`
+means a case was not reached; `INCOMPLETE` means it started but did not finish.
+The table is saved as `summary.txt` alongside the individual case logs under
+`out/lifecycle-e2e-logs/<run>/`.
+
 {{% details title="One-time Incus setup" closed="true" %}}
 
 Incus runs full Linux userspaces as unprivileged system containers, including

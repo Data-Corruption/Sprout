@@ -35,7 +35,7 @@ empty segments, `.` or `..`, URL escapes, credentials, a query, or a fragment.
 
 [Cloudflare's R2 guide](https://developers.cloudflare.com/r2/buckets/public-buckets/#connect-a-bucket-to-a-custom-domain)
 has more detail on connecting the hostname. Other S3-compatible hosts require changes to the publication code under
-`scripts/build/`.
+`scripts/ci/`.
 
 ## Configure GitHub Actions
 
@@ -82,12 +82,20 @@ You can edit its contents.
    For later releases, use a new version greater than the current one.
 
 3. Commit the application changes and changelog, then push or merge them to
-   `main`. Open the repository's **Actions** tab and follow the release workflow.
+   `main`. Open the repository's **Actions** tab to see the release workflow.
 
-CI tests, builds, signs, and uploads the release. It promotes the root `version`
-file after verifying the uploaded artifacts, then pushes the Git tag. See
-[release internals]({{% relref "docs/architecture" %}}#releases) for the artifact
-layout and publication order.
+The workflow checks whether the changelog version already has a Git tag. For a
+new, untagged version, it runs the Linux and Windows tests, then builds and
+uploads the release. After verifying the uploaded files, it updates the release
+host's `version` file so installers can find the new version. It pushes the Git
+tag last.
+
+A later push with the same tagged version skips the full test suites and reuses
+the published binaries. Changed installers are tested before publication.
+Pull requests run the full validation jobs.
+
+[Release internals]({{% relref "docs/architecture" %}}#releases) explains the
+workflow, publication order, and recovery rules.
 
 ## Verify the release
 
@@ -114,9 +122,10 @@ original workflow run, or:
 gh run rerun RUN_ID --failed
 ```
 
-The publisher verifies remote state and resumes completed work. Keep the
-original source and version for the retry. Do not create the tag by hand or
-push a dummy commit to restart publication.
+The publisher checks which files were already uploaded and verified, then
+continues with the remaining steps. Successful test jobs do not need to run
+again. Keep the original source and version for the retry. Do not create the
+tag by hand or push a dummy commit to restart publication.
 
 If the code or tests need a fix, commit it with a new version heading. Never
 replace published bytes or move an existing tag.

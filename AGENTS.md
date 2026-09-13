@@ -34,7 +34,8 @@ does not apply.
 | `internal/ui` | Embedded templates, vanilla JS modules, Tailwind/DaisyUI source |
 | `internal/build` | Values baked in at build time |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, crypto, prompts, sd_notify |
-| `scripts/build.sh`, `scripts/build/` | Editable project values, local builds, remote publication |
+| `scripts/build.sh`, `scripts/build/` | Editable project values, local builds, shared artifact helpers |
+| `scripts/ci.sh`, `scripts/ci/` | Release planning, publication, and recovery |
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
 | `scripts/install.sh`, `scripts/install.ps1` | The installers; templated by `build.sh` |
 | `scripts/test.sh`, `scripts/test-*` | Test entrypoints and harnesses |
@@ -163,6 +164,19 @@ forever). Comments explain why an ordering or check exists, not what the next
 line does. Tests use only the standard `testing` package, open real SQLite in
 `t.TempDir()`, and spawn real subprocesses for cross-process claims. Keep it
 that way.
+
+## Documentation
+
+Write reader-facing docs for a template user learning the current system.
+Explain what it does, how to use it, and the constraints that affect the user.
+Define unfamiliar terms before relying on them.
+
+Avoid "Doylist" framing: narrating implementation history, a recent refactor,
+rejected alternatives, or the conversation that produced a change. These docs
+are not a changelog. Describe current behavior directly; put change history
+and implementation rationale in commits or PR descriptions. Include rationale
+in user docs only when it helps the reader make a decision or understand a
+constraint.
 
 ## Upstream template only
 

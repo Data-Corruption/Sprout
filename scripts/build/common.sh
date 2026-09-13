@@ -1,7 +1,7 @@
 # Shared build primitives.
 #
-# This file is sourced by ../build.sh. Keep it focused on command execution,
-# verified downloads, invocation parsing, and host/build-mode detection.
+# Shared by build.sh and ci.sh through build.sh. Command execution, verified
+# downloads, local build arguments, and host architecture detection.
 
 # run_step "success_msg" "fail_msg" command [args...]
 # Runs a command, prints success or failure message, exits on failure.
@@ -100,10 +100,6 @@ dep_check() {
   if [[ "$BUILD_KIND" != "dev" ]]; then
     required_bins+=(gcc)
   fi
-  if [[ "$MODE" == "ci" ]]; then
-    # cosign is not listed: prepare_local_build_context vendors the pinned one.
-    required_bins+=(curl)
-  fi
 
   for bin in "${required_bins[@]}"; do
     if ! command -v "$bin" >/dev/null 2>&1; then
@@ -139,26 +135,6 @@ parse_args() {
   done
   # only the default dev build bakes DevMode
   [[ "$BUILD_KIND" == "dev" ]] || DEV_MODE=false
-}
-
-detect_mode() {
-  if [[ "${CI:-}" == "true" ]]; then
-    MODE="ci"
-    if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
-      printf "🔴 GITHUB_REPOSITORY not set; cannot derive cosign identity\n" >&2
-      exit 1
-    fi
-    CERT_IDENTITY="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/heads/main"
-  else
-    MODE="local"
-  fi
-}
-
-validate_mode_flags() {
-  if [[ "$MODE" == "ci" && "$BUILD_KIND" != "prod-all" ]]; then
-    printf "error: CI builds must use --prod-all\n" >&2
-    exit 1
-  fi
 }
 
 validate_app_name() {

@@ -7,8 +7,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# shellcheck source=build.sh
-source scripts/build.sh
+# shellcheck source=ci.sh
+source scripts/ci.sh
 
 fail() {
   printf 'release test failed: %s\n' "$*" >&2
@@ -49,7 +49,7 @@ fi
 changelog_dir="$tmp/changelog"
 mkdir -p "$changelog_dir"
 printf '# Changelog\n\n<!--\n// ## [v0.1.0] - YYYY-MM-DD\n-->\n' > "$changelog_dir/CHANGELOG.md"
-if changelog_output=$(cd "$changelog_dir" && MODE=ci resolve_version 2>&1); then
+if changelog_output=$(cd "$changelog_dir" && resolve_version 2>&1); then
   fail "a CHANGELOG.md without a release heading was accepted"
 fi
 [[ "$changelog_output" == *'## [vX.Y.Z]'* ]] ||
@@ -57,13 +57,12 @@ fi
 
 printf '# Changelog\n\n## [v1.4.2] - 2026-01-02\n\n### Added\n\n- Thing.\n' \
   > "$changelog_dir/CHANGELOG.md"
-changelog_version=$(cd "$changelog_dir" && MODE=ci resolve_version && printf '%s' "$VERSION")
+changelog_version=$(cd "$changelog_dir" && resolve_version && printf '%s' "$VERSION")
 [[ "$changelog_version" == "v1.4.2" ]] ||
   fail "release heading was not parsed into VERSION (got '$changelog_version')"
 
 # Exercise the real CI destination configuration without contacting R2.
 configured_remote() (
-  MODE=ci
   RELEASE_URL="$1"
   R2_BUCKET=release-bucket
   R2_ACCESS_KEY_ID="test"
@@ -199,6 +198,114 @@ upload_remote_file "$tmp/install.sh.cosign.bundle" "$stage/install.sh.cosign.bun
 rm -f "$PUBLISH_REMOTE/install.sh.cosign.bundle"
 installer_needs_update install.sh || fail "verified staged recovery was rejected"
 publish_installer install.sh
+
+# Exercise the public planning entrypoint in fresh processes. Only tool setup
+# and the destination are substituted; the real probe, rendering, CLI parsing,
+# and GitHub output writer run against signed local objects and a real Git remote.
+(
+  plan_root="$tmp/plan"
+  mkdir -p "$plan_root/work/scripts" "$plan_root/remote/releases"
+  cp scripts/install.sh scripts/install.ps1 "$plan_root/work/scripts/"
+  printf '# Changelog\n\n## [v1.2.3] - 2026-01-02\n' > "$plan_root/work/CHANGELOG.md"
+  cp -a "$VERSION_DIR" "$plan_root/candidate"
+  git init --bare -q "$plan_root/origin"
+  git init -q "$plan_root/work"
+  cd "$plan_root/work"
+  git add .
+  git -c user.name=release-test -c user.email=release-test@example.invalid commit -qm initial
+  git remote add origin "$plan_root/origin"
+  git push -q origin HEAD:main
+  # Explicit commands work independently of the ambient CI variable.
+  export CI=false GITHUB_REPOSITORY=example/plan
+  export GITHUB_OUTPUT="$plan_root/outputs"
+
+  cat > "$plan_root/run" <<'EOF'
+set -euo pipefail
+source "$1"
+export R2_ACCESS_KEY_ID=test R2_SECRET_ACCESS_KEY=test R2_ACCOUNT_ID=test R2_BUCKET=test
+vendor_cosign() { COSIGN_BIN=cosign; }
+plan_remote=$2
+configure_distribution() { PUBLISH_REMOTE="$plan_remote"; }
+build_binaries() { echo 'unexpected rebuild of release fixtures' >&2; exit 99; }
+if [[ "${3:---plan}" == --plan ]]; then
+  execute_release() { echo 'planning attempted publication' >&2; exit 99; }
+fi
+ci_main "${3:---plan}"
+EOF
+
+  check_plan() {
+    local e2e=$1 installers=$2
+    : > "$GITHUB_OUTPUT"
+    cp -a "$plan_root/remote" "$plan_root/before"
+    bash "$plan_root/run" "$BUILD_SCRIPT_DIR/ci.sh" "$plan_root/remote"
+    [[ "$(cat "$GITHUB_OUTPUT")" == "$(printf 'e2e_required=%s\ninstaller_tests_required=%s' "$e2e" "$installers")" ]] ||
+      fail "unexpected planning outputs: $(cat "$GITHUB_OUTPUT")"
+    diff -r "$plan_root/before" "$plan_root/remote" || fail "planning changed remote objects"
+    rm -rf "$plan_root/before"
+    [[ -z "$(git ls-remote --refs --tags origin)" || "$e2e" == false ]] ||
+      fail "planning created a Git tag"
+  }
+
+  reject_plan() {
+    : > "$GITHUB_OUTPUT"
+    if bash "$plan_root/run" "$BUILD_SCRIPT_DIR/ci.sh" "$plan_root/remote" > "$plan_root/error" 2>&1; then
+      fail "invalid remote state was accepted by release planning"
+    fi
+    [[ "$(cat "$plan_root/error")" == *"$1"* ]] || fail "unexpected planning error: $(cat "$plan_root/error")"
+    [[ ! -s "$GITHUB_OUTPUT" ]] || fail "failed planning emitted scheduling outputs"
+  }
+
+  check_plan true true # first release
+  mkdir -p "$plan_root/remote/releases/v1.2.3"
+  printf 'partial\n' > "$plan_root/remote/releases/v1.2.3/linux-amd64.gz"
+  check_plan true true # incomplete, never promoted
+  cp -a "$plan_root/candidate/." "$plan_root/remote/releases/v1.2.3/"
+  check_plan true true # staged but untagged: must still test
+
+  # Exact rendered installers are already published. No installer daemon is
+  # needed, but an untagged current candidate still requires the broad suites.
+  for name in install.sh install.ps1; do
+    cp "out/release/$name" "$plan_root/remote/$name"
+    cosign sign-blob --bundle "$plan_root/remote/$name.cosign.bundle" "$plan_root/remote/$name"
+  done
+  printf 'v1.2.3\n' > "$plan_root/remote/version"
+  check_plan true false
+  # A fresh execution re-reads the remote state and finishes the release.
+  # The build stub fails if it tries to rebuild already verified binaries.
+  : > "$GITHUB_OUTPUT"
+  bash "$plan_root/run" "$BUILD_SCRIPT_DIR/ci.sh" "$plan_root/remote" --execute
+  [[ ! -s "$GITHUB_OUTPUT" ]] || fail "execution wrote planning outputs"
+  [[ -n "$(git ls-remote --refs --tags origin refs/tags/v1.2.3)" ]] || fail "execution did not finish tagging"
+  check_plan false false # ordinary push after a completed release
+  printf '\n# installer change\n' >> scripts/install.sh
+  check_plan false true # installer-only publication retains focused validation
+
+  cp "$plan_root/remote/releases/v1.2.3/linux-amd64.gz" "$plan_root/binary"
+  printf 'corrupt\n' > "$plan_root/remote/releases/v1.2.3/linux-amd64.gz"
+  reject_plan 'complete but invalid'
+  rm "$plan_root/remote/releases/v1.2.3/linux-amd64.gz"
+  reject_plan 'immutable prefix is incomplete'
+  cp "$plan_root/binary" "$plan_root/remote/releases/v1.2.3/linux-amd64.gz"
+  rm "$plan_root/remote/install.sh.cosign.bundle"
+  reject_plan 'explicit recovery is required'
+
+  # An older workflow may finish only its tag after a newer promotion. It
+  # must not test or publish its old installer templates, even if they differ.
+  git push -q origin :refs/tags/v1.2.3
+  git tag -d v1.2.3 >/dev/null
+  printf 'v2.0.0\n' > "$plan_root/remote/version"
+  mkdir -p "$plan_root/remote/.state/promotions"
+  {
+    date -u +%Y-%m-%dT%H:%M:%S.%NZ
+    git rev-parse HEAD
+  } > "$plan_root/remote/.state/promotions/v1.2.3"
+  check_plan false false
+  [[ -z "$(git ls-remote --refs --tags origin)" ]] || fail "tag-only planning pushed a tag"
+  rm "$plan_root/remote/.state/promotions/v1.2.3"
+  reject_plan 'refusing to move' # no evidence of prior promotion
+  git remote set-url origin "$plan_root/missing-origin"
+  reject_plan 'failed to inspect remote tag'
+)
 
 # Without a matching staging transaction, an invalid root pair must fail
 # closed instead of being silently overwritten.

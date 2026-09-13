@@ -1,6 +1,6 @@
 # Remote release publication and recovery state machine.
 #
-# This file is sourced by ../build.sh. It owns distribution configuration,
+# This file is sourced by ../ci.sh. It owns distribution configuration,
 # release policy, immutable objects, installer publication, promotion, tagging,
 # and retention. Keep durable remote writes in protocol order.
 
@@ -23,31 +23,27 @@ REMOTE_ABSENT=1
 REMOTE_UNUSABLE=2
 
 require_distribution_config() {
-  if [[ "$MODE" == "ci" ]]; then
-    if ! command -v rclone >/dev/null 2>&1; then
-      printf "error: 'rclone' is required but not installed or not in \$PATH\n" >&2
-      exit 1
-    fi
-    if [[ -z "${R2_ACCESS_KEY_ID:-}" || -z "${R2_SECRET_ACCESS_KEY:-}" || -z "${R2_ACCOUNT_ID:-}" || -z "${R2_BUCKET:-}" ]]; then
-      printf "🔴 Distribution not configured\n" >&2
-      exit 1
-    fi
+  if ! command -v rclone >/dev/null 2>&1; then
+    printf "error: 'rclone' is required but not installed or not in \$PATH\n" >&2
+    exit 1
+  fi
+  if [[ -z "${R2_ACCESS_KEY_ID:-}" || -z "${R2_SECRET_ACCESS_KEY:-}" || -z "${R2_ACCOUNT_ID:-}" || -z "${R2_BUCKET:-}" ]]; then
+    printf "🔴 Distribution not configured\n" >&2
+    exit 1
   fi
 }
 
 resolve_version() {
-  if [[ "$MODE" == "ci" ]]; then
-    VERSION=$(sed -n 's/^## \[\(.*\)\] - .*/\1/p' CHANGELOG.md | head -n 1)
-    if [[ -z "$VERSION" ]]; then
-      printf "error: no release heading found in CHANGELOG.md\n" >&2
-      printf "  The publisher reads its version from the first heading shaped like:\n" >&2
-      printf "    ## [vX.Y.Z] - YYYY-MM-DD\n" >&2
-      printf "  Add one for the release you intend to publish; the commented-out\n" >&2
-      printf "  example near the top of CHANGELOG.md shows the expected form.\n" >&2
-      printf "  Once a heading exists it stays, and later pushes that do not change\n" >&2
-      printf "  it re-verify the promoted release and finish without republishing.\n" >&2
-      exit 1
-    fi
+  VERSION=$(sed -n 's/^## \[\(.*\)\] - .*/\1/p' CHANGELOG.md | head -n 1)
+  if [[ -z "$VERSION" ]]; then
+    printf "error: no release heading found in CHANGELOG.md\n" >&2
+    printf "  The publisher reads its version from the first heading shaped like:\n" >&2
+    printf "    ## [vX.Y.Z] - YYYY-MM-DD\n" >&2
+    printf "  Add one for the release you intend to publish; the commented-out\n" >&2
+    printf "  example near the top of CHANGELOG.md shows the expected form.\n" >&2
+    printf "  Once a heading exists it stays, and later pushes that do not change\n" >&2
+    printf "  it re-verify the promoted release and finish without republishing.\n" >&2
+    exit 1
   fi
 }
 
@@ -73,18 +69,16 @@ release_url_prefix() {
 }
 
 configure_distribution() {
-  if [[ "$MODE" == "ci" ]]; then
-    local prefix
-    prefix=$(release_url_prefix "$RELEASE_URL") || return 1
-    export RCLONE_CONFIG_R2_TYPE=s3
-    export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
-    export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
-    export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
-    export RCLONE_CONFIG_R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-    PUBLISH_REMOTE="r2:$R2_BUCKET${prefix:+/$prefix}"
-    RCLONE_ARGS=(--s3-env-auth --s3-no-check-bucket)
-    UPLOAD_ARGS=(--header-upload "$NO_CACHE" --ignore-times)
-  fi
+  local prefix
+  prefix=$(release_url_prefix "$RELEASE_URL") || return 1
+  export RCLONE_CONFIG_R2_TYPE=s3
+  export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+  export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+  export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+  export RCLONE_CONFIG_R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+  PUBLISH_REMOTE="r2:$R2_BUCKET${prefix:+/$prefix}"
+  RCLONE_ARGS=(--s3-env-auth --s3-no-check-bucket)
+  UPLOAD_ARGS=(--header-upload "$NO_CACHE" --ignore-times)
 }
 
 validate_version() {
@@ -845,4 +839,9 @@ cleanup_old_releases() {
     run_step "Deleted promotion state for $version" "Failed to delete promotion state for $version" \
       rclone deletefile "$PUBLISH_REMOTE/.state/promotions/$version" "${RCLONE_ARGS[@]}"
   done
+}
+
+sign_application_release() {
+  run_step "Signed checksums.txt" "Failed to sign checksums.txt" \
+    "$COSIGN_BIN" sign-blob --yes --bundle "$VERSION_DIR/checksums.txt.cosign.bundle" "$VERSION_DIR/checksums.txt"
 }
