@@ -7,11 +7,9 @@ dashboard, and signed self-updates. It's a complete example application, not a
 framework or a library dependency: copy it, cut the features you don't need,
 rename the module, and the result is ordinary Go and shell that belongs to you.
 
-**Documentation: [sproutcli.dev](https://sproutcli.dev/)**
-
-The site is built from [`docs/content/`](docs/content/docs/) in this
-repository, so the same pages are readable here as plain Markdown if the site
-is ever unreachable:
+The [documentation site](https://sproutcli.dev/) is built from
+[`docs/content/`](docs/content/docs/) in this repository, so the same pages are
+readable here as plain Markdown if the site is ever unreachable:
 
 - [Getting started](docs/content/docs/getting-started/_index.md): features,
   cutting, building, releasing, installing, operating
