@@ -1,16 +1,10 @@
-# --- FILE template ---
-
-# Template-only: this deploys Sprout's own documentation site to Sprout's
-# Cloudflare account. It uses repo secrets so there isn't really a risk of
-# contention with the upstream repository. Honestly i'm still considering
-# if the docs themselves could be part of the template, maybe a cuttable
-# feature.. idk for now i'm just gonna mark this as template.
-
 name: Docs
 
 # Builds the Hugo docs site and deploys it to Cloudflare Workers
-# Static Assets (worker "sprout-docs"). Only runs when docs/ changes.
-# One-time Cloudflare setup lives in docs/DEPLOYMENT.md.
+# Static Assets when DOCS_ENABLED is true. Pushes run for the paths below;
+# workflow_dispatch also allows manual deployment.
+# Set the worker name in docs/wrangler.jsonc and site URL in docs/hugo.yaml.
+# Follow docs/DEPLOYMENT.md before enabling deployment.
 
 on:
   push:
